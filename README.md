@@ -4,6 +4,27 @@ Static structural graph tool for JavaScript / TypeScript repositories. Points at
 
 ![Sutra overview — echo-ai scan](docs/overview.png)
 
+## Vision
+
+> **See your product as features — derived from code, not from docs, and honest about what it doesn't know.**
+
+- **Truthful by default.** Every finding is labelled *candidate* until it's actually confirmed (cross-repo, dynamic routes, and external hosts resolved). No "finds all bugs", no overstated claims — structural/contract drift only.
+- **Features, not files.** The unit is a *feature*: what it is, what it wires to, whether the wiring is intact, and where it's broken — with a health score you can click into.
+- **A realistic feature viewer.** An interactive local viewer — feature cards, request-flow drill-down, a cross-repo map, and live refresh on code change — so you learn something true-and-new about your codebase in seconds.
+
+## Roadmap
+
+Full plan (4 epics, 23 stories, sequencing, and Definition of Done) lives here:
+**[`_bmad/ROADMAP.md`](https://github.com/sbknext/forge-sutra/blob/main/_bmad/ROADMAP.md)**
+· browse every story in the **[plan index](https://github.com/sbknext/forge-sutra/blob/main/_bmad/README.md)**.
+
+- **Epic 1 — Truthful Graph:** external-host allowlist, dynamic-route matcher, confidence model, cross-repo linking, incremental scan, scan diff.
+- **Epic 2 — Real Features:** feature contracts, client↔server reconciliation, AI inference, health score, flow tracing, test-coverage mapping.
+- **Epic 3 — Realistic Feature Viewer ⭐:** viewer app, feature cards, drill-down, cross-repo map, live/watch, search & share.
+- **Epic 4 — Ecosystem & SDK:** language-agnostic core, Python/Frappe extractor, Forge SDK extraction, CI integration, graph history.
+
+**Try it:** `sutra scan /path/to/repo && sutra view` — then watch the roadmap as the static view grows into the full feature viewer. Issues and PRs welcome.
+
 ## Commands
 
 ### `sutra scan [repoPath]`

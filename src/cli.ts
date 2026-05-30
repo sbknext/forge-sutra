@@ -25,9 +25,19 @@ import { runScanPipeline, startWatch, type ScanTimings } from "./watch.js";
 import { reconcileGraphs, buildReconcileOutput, type ReconcileOutput } from "./reconcile.js";
 import { migrateFile } from "./migrate.js";
 import { exportContracts, exportGraphSchema, exportIssues, writeExport } from "./export.js";
-import type { IssueKind, SutraGraph } from "./types.js";
+import { inferFeatureLabels, countAiLabels } from "./ai/infer-features.js";
+import type { IssueKind, SutraGraph, SutraIssue } from "./types.js";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
+
+/** Format severity + optional provenance/confidence for CLI issue lines. */
+function formatIssueBadge(iss: SutraIssue): string {
+  const sev = iss.severity.toUpperCase();
+  if (iss.provenance !== undefined && iss.confidence !== undefined) {
+    return `[${sev} · ${iss.provenance} · ${iss.confidence.toFixed(2)}]`;
+  }
+  return `[${sev}]`;
+}
 
 function getCommit(repoRoot: string): string {
   try {
@@ -72,6 +82,25 @@ function printScanSummary(graph: SutraGraph, outFile: string): void {
   );
   console.log(`  ${chalk.cyan(String(edges.length))} edges`);
   console.log(`  ${chalk.cyan(String(features.length))} features`);
+
+  const healthDist = { green: 0, amber: 0, red: 0 };
+  for (const f of features) {
+    const band = f.health?.band ?? "green";
+    if (band in healthDist) healthDist[band as keyof typeof healthDist]++;
+  }
+  console.log(
+    `  health: ${chalk.green(String(healthDist.green))} green · ${chalk.yellow(String(healthDist.amber))} amber · ${chalk.red(String(healthDist.red))} red (heuristic structural)`,
+  );
+
+  const flowCount = graph.flows?.length ?? 0;
+  if (flowCount > 0) {
+    const confirmed = graph.flows.filter((f) => f.confidence === "confirmed").length;
+    const candidate = flowCount - confirmed;
+    console.log(
+      `  flows: ${chalk.cyan(String(flowCount))} traced (${confirmed} confirmed, ${candidate} candidate)`,
+    );
+  }
+
   console.log(`  commit: ${chalk.gray(graph.commit)}`);
   console.log();
 
@@ -96,7 +125,8 @@ function printScanSummary(graph: SutraGraph, outFile: string): void {
             : chalk.blue(`[${(sev ?? "").toUpperCase()}]`);
       console.log(`  ${label} ${chalk.bold(kind ?? "")} (${group.length})`);
       for (const iss of group.slice(0, 5)) {
-        console.log(`    · ${iss.feature}: ${iss.message}`);
+        const badge = formatIssueBadge(iss);
+        console.log(`    · ${badge} ${iss.feature}: ${iss.message}`);
       }
       if (group.length > 5) {
         console.log(`    … and ${group.length - 5} more`);
@@ -118,10 +148,10 @@ function printProfile(timings: ScanTimings): void {
   console.error(chalk.gray(`    total:  ${timings.totalMs.toFixed(0)}ms\n`));
 }
 
-function cmdScan(
+async function cmdScan(
   repoPath: string | undefined,
-  opts: { watch?: boolean; profile?: boolean },
-): void {
+  opts: { watch?: boolean; profile?: boolean; ai?: boolean },
+): Promise<void> {
   const cwd = process.cwd();
   const repoRoot = path.resolve(repoPath ?? cwd);
   const commit = getCommit(repoRoot);
@@ -158,10 +188,33 @@ function cmdScan(
 
   console.log(chalk.bold(`\nSutra scan → ${repoRoot}\n`));
 
-  const { graph, graphPath } = runScanPipeline(repoRoot, cwd, commit, {
-    profile: opts.profile,
-    onProfile: opts.profile ? printProfile : undefined,
-  });
+  const { graph, graphPath } = await (async () => {
+    const result = runScanPipeline(repoRoot, cwd, commit, {
+      profile: opts.profile,
+      onProfile: opts.profile ? printProfile : undefined,
+    });
+    if (opts.ai) {
+      const features = await inferFeatureLabels(result.graph, {
+        enabled: true,
+        onSkip: (reason) => {
+          console.error(chalk.yellow(`  ${reason}`));
+        },
+      });
+      result.graph.features = features;
+      const counts = countAiLabels(features);
+      console.error(
+        chalk.gray(
+          `  AI naming: ${counts.ai} ai-inferred · ${counts.heuristic} heuristic`,
+        ),
+      );
+      fs.writeFileSync(
+        result.graphPath,
+        JSON.stringify(result.graph, null, 2),
+        "utf8",
+      );
+    }
+    return result;
+  })();
   printScanSummary(graph, graphPath);
 }
 
@@ -465,8 +518,9 @@ program
   )
   .option("--watch", "Re-scan on file changes (debounced, static scan only)")
   .option("--profile", "Print phase timings to stderr (candidate, environment-dependent)")
-  .action((repoPath: string | undefined, opts: { watch?: boolean; profile?: boolean }) => {
-    cmdScan(repoPath, opts);
+  .option("--ai", "Enable LLM feature naming (requires SUTRA_AI_API_KEY; opt-in)")
+  .action(async (repoPath: string | undefined, opts: { watch?: boolean; profile?: boolean; ai?: boolean }) => {
+    await cmdScan(repoPath, opts);
   });
 
 program

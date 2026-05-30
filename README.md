@@ -55,6 +55,7 @@ sutra scan         # alias — same command
 Options:
 - `--watch` — debounced re-scan on TS/JS file changes. Snapshots previous graph to `.sutra/graph.prev.json`, writes `.sutra/diff.json`, prints delta summary. Ctrl+C to stop. Static scan only — not a runtime monitor.
 - `--profile` — print phase timings (walk, parse, checks, write) to stderr. Candidate timings only — environment-dependent, not an SLA.
+- `--ai` — opt-in LLM feature naming (`ai_name` / `ai_summary` on features). Requires `SUTRA_AI_API_KEY`. Offline/no-key scans fall back to heuristic labels.
 
 What it does:
 1. Walks the repo (skips `node_modules`, `dist`, `.next`, `.git`, `coverage`, `out`).
@@ -126,6 +127,7 @@ Migrates **structure only** — does not re-scan or fix semantic issues.
 |---------|--------|
 | 0 | Phase 0 schema (no `contracts` field) |
 | 1 | Added `contracts[]` from `feature.sutra.md` |
+| 2 | Optional `confidence` (0..1) and `provenance` on nodes, edges, issues |
 
 When `GRAPH_VERSION` bumps, run `forge-sutra migrate` on cached graphs before diffing or viewing.
 
@@ -135,7 +137,7 @@ When `GRAPH_VERSION` bumps, run `forge-sutra migrate` on cached graphs before di
 
 ```jsonc
 {
-  "version": 1,           // GRAPH_VERSION constant; bump = breaking change
+  "version": 5,           // GRAPH_VERSION constant; bump = breaking change
   "repo": "my-repo",      // basename of the scanned directory
   "scanned_at": "...",    // ISO 8601 UTC timestamp
   "commit": "abc1234",    // short git hash, or "unknown"
@@ -143,7 +145,8 @@ When `GRAPH_VERSION` bumps, run `forge-sutra migrate` on cached graphs before di
   "edges": [SutraEdge],
   "issues": [SutraIssue],
   "features": [SutraFeature],
-  "contracts": [SutraContract]  // from feature.sutra.md when present
+  "contracts": [SutraContract],  // from feature.sutra.md when present
+  "flows": [SutraFlow]           // ordered request paths (Story 2.5)
 }
 ```
 
@@ -157,9 +160,13 @@ When `GRAPH_VERSION` bumps, run `forge-sutra migrate` on cached graphs before di
   "file": "src/api/route.ts",             // repo-relative POSIX path
   "line": 12,
   "data_shape": "{ id: string }",         // first param type text, or null
-  "feature": "api"                        // heuristic grouping id
+  "feature": "api",                        // heuristic grouping id
+  "confidence": 0.9,                       // optional 0..1; absent = unknown
+  "provenance": "ast-exact"                // optional; see Provenance below
 }
 ```
+
+**Provenance values:** `ast-exact` (AST-resolved, no guessing), `heuristic` (directory/name inference), `template-prefix` (truncated template literal URL), `ai-inferred` (LLM-produced, never asserted as fact).
 
 ### SutraEdge
 
@@ -167,7 +174,9 @@ When `GRAPH_VERSION` bumps, run `forge-sutra migrate` on cached graphs before di
 {
   "from": "src/components/Foo.tsx",
   "to":   "http:POST /api/bar",           // or a node id, or "ext:react"
-  "kind": "calls|imports|renders|tests|http"
+  "kind": "calls|imports|renders|tests|http",
+  "confidence": 0.9,                      // optional
+  "provenance": "ast-exact"               // optional
 }
 ```
 
@@ -179,7 +188,9 @@ When `GRAPH_VERSION` bumps, run `forge-sutra migrate` on cached graphs before di
   "kind": "orphaned_endpoint|missing_handler|dangling_test_ref|contract_parse_error|contract_missing_route|contract_undeclared_route|cross_repo_orphan",
   "node": "POST /api/bar",               // the thing in question
   "feature": "components",              // heuristic feature tag
-  "message": "Client calls POST /api/bar but no route handler defines it."
+  "message": "Client calls POST /api/bar but no route handler defines it.",
+  "confidence": 0.4,                    // optional
+  "provenance": "template-prefix"       // optional
 }
 ```
 
@@ -190,9 +201,39 @@ When `GRAPH_VERSION` bumps, run `forge-sutra migrate` on cached graphs before di
   "id": "components",
   "label": "Components",
   "node_ids": ["..."],
-  "issue_count": 3
+  "issue_count": 3,
+  "health": {
+    "score": 72,
+    "band": "amber",
+    "inputs": [ ... ],
+    "available_signals": ["issue_load", "orphan_ratio"]
+  },
+  "label_source": "heuristic",   // or "ai-inferred" when scan --ai succeeds
+  "ai_name": "Authentication",   // optional; display only when ai-inferred
+  "ai_summary": "Login and OTP." // optional; one line, length-capped
 }
 ```
+
+### Feature health (heuristic)
+
+Each feature carries a **heuristic structural health score** (0–100) with band `green` / `amber` / `red`. This is derived from code structure (issue load, orphan ratio, and optional signals when available) — **not** runtime correctness or test pass/fail. The viewer labels this explicitly so it is never read as a bug-free guarantee.
+
+### SutraFlow
+
+```jsonc
+{
+  "id": "flow:app/widget/page.tsx#WidgetPage",
+  "entry": "app/widget/page.tsx#WidgetPage",
+  "steps": [
+    { "node": "app/widget/page.tsx#WidgetPage", "edge": null },
+    { "node": "components/WidgetButton.tsx#WidgetButton", "edge": { "from": "...", "to": "...", "kind": "renders" } }
+  ],
+  "terminal": "db|handler|external|unresolved|truncated",
+  "confidence": "confirmed|candidate"
+}
+```
+
+Request flows are **code-derived paths** from entry (route/component) through renders/calls/http hops. Unresolved or dynamic-segment http targets are labelled `candidate`, not confirmed.
 
 ---
 
@@ -207,6 +248,7 @@ When `GRAPH_VERSION` bumps, run `forge-sutra migrate` on cached graphs before di
 | `contract_missing_route` | Declared endpoint in contract has no matching route in graph (error). |
 | `contract_undeclared_route` | Route exists but not declared in contract when contract file present (warn). |
 | `cross_repo_orphan` | Client graph HTTP call has no matching route in server graph (warn, via `reconcile`). |
+| `untested_feature` | No confirmed `tests` edge resolves into the feature (info). **Static presence only — not runtime/line coverage.** |
 
 ---
 
@@ -218,7 +260,7 @@ Sutra is a **static, heuristic approximation**. Read this before acting on any f
 - **Candidate results, not complete.** Dynamic imports, aliased imports, runtime-generated routes, and unresolved template-literal concatenation may produce false positives or misses.
 - **Static approximation.** No code is executed. No type inference beyond what ts-morph surfaces.
 - **Not auto-debug / auto-test.** Sutra does not fix code, run tests, or validate runtime behavior. Scaffold output is candidate stubs only.
-- **Review before acting.** Every issue is a candidate for human review. The HTML view labels all results as "heuristic / candidate".
+- **Test linkage is static, not coverage.** `test_edge_count` / `tested` count confirmed `tests` edges in the graph. They do NOT measure line coverage, branch coverage, or test pass/fail.
 
 Known limitations:
 - **External hosts:** Known external API hosts (Telegram, Stripe, etc.) are suppressed via allowlist + optional `.sutra/external-hosts.json`. Unknown external hosts may still false-positive.

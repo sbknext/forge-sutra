@@ -11,6 +11,7 @@ import { scan } from "../src/scanner.js";
 import { loadContracts } from "../src/contracts.js";
 import { runChecks, checkContractDrift } from "../src/checks.js";
 import { buildFeatures } from "../src/features.js";
+import { buildFlows } from "../src/flows.js";
 import { GRAPH_VERSION, type SutraGraph } from "../src/types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -22,6 +23,8 @@ function buildGraph(repoRoot: string): SutraGraph {
   const { contracts, issues: contractIssues } = loadContracts(repoRoot);
   const driftIssues = checkContractDrift(contracts, nodes);
   const issues = [...checkIssues, ...contractIssues, ...driftIssues];
+  const features = buildFeatures(nodes, issues, edges, { contracts });
+  const { flows } = buildFlows(nodes, edges);
   return {
     version: GRAPH_VERSION,
     repo: "test",
@@ -30,8 +33,9 @@ function buildGraph(repoRoot: string): SutraGraph {
     nodes,
     edges,
     issues,
-    features: buildFeatures(nodes, issues),
+    features,
     contracts,
+    flows,
   };
 }
 

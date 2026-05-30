@@ -1,7 +1,38 @@
 // graph.json contract — THE single source of truth. Every consumer reads this.
 // Phase 0. Keep ids stable + deterministic so future phases can diff scans.
 
-export const GRAPH_VERSION = 1;
+export const GRAPH_VERSION = 5;
+
+/**
+ * How a graph element was derived:
+ * - ast-exact: resolved directly from parsed AST, no guessing
+ * - heuristic: directory/name-based inference
+ * - template-prefix: only the static prefix of a template literal was extractable
+ * - ai-inferred: produced by an LLM (never asserted as fact)
+ */
+export type Provenance = "ast-exact" | "heuristic" | "template-prefix" | "ai-inferred";
+
+/** Deterministic confidence heuristics (0..1). Not a statistical model. */
+export const CONFIDENCE = {
+  AST_EXACT: 0.9,
+  HEURISTIC: 0.6,
+  TEMPLATE_PREFIX: 0.4,
+  AI_INFERRED: 0.5,
+} as const;
+
+/** Map provenance label to fixed confidence score. */
+export function confidenceForProvenance(p: Provenance): number {
+  switch (p) {
+    case "ast-exact":
+      return CONFIDENCE.AST_EXACT;
+    case "heuristic":
+      return CONFIDENCE.HEURISTIC;
+    case "template-prefix":
+      return CONFIDENCE.TEMPLATE_PREFIX;
+    case "ai-inferred":
+      return CONFIDENCE.AI_INFERRED;
+  }
+}
 
 export type NodeType =
   | "route"
@@ -24,7 +55,8 @@ export type IssueKind =
   | "contract_missing_route"
   | "contract_undeclared_route"
   | "cross_repo_orphan"
-  | "hook_failure";
+  | "hook_failure"
+  | "untested_feature";
 
 export interface SutraNode {
   /** Stable deterministic id: `relative/path#symbol`. */
@@ -38,6 +70,10 @@ export interface SutraNode {
   data_shape: string | null;
   /** Heuristic feature grouping id. */
   feature: string;
+  /** Certainty score 0..1 inclusive; absent = unknown. */
+  confidence?: number;
+  /** How this finding was derived; absent = unknown. */
+  provenance?: Provenance;
 }
 
 export interface SutraEdge {
@@ -45,6 +81,10 @@ export interface SutraEdge {
   from: string;
   to: string;
   kind: EdgeKind;
+  /** Certainty score 0..1 inclusive; absent = unknown. */
+  confidence?: number;
+  /** How this finding was derived; absent = unknown. */
+  provenance?: Provenance;
 }
 
 export interface SutraIssue {
@@ -54,6 +94,28 @@ export interface SutraIssue {
   node: string;
   feature: string;
   message: string;
+  /** Certainty score 0..1 inclusive; absent = unknown. */
+  confidence?: number;
+  /** How this finding was derived; absent = unknown. */
+  provenance?: Provenance;
+}
+
+export type HealthBand = "green" | "amber" | "red";
+
+export interface FeatureHealthInput {
+  signal: string;
+  available: boolean;
+  weight: number;
+  penalty: number;
+  detail: string;
+}
+
+/** Heuristic structural health — not runtime correctness. */
+export interface FeatureHealth {
+  score: number;
+  band: HealthBand;
+  inputs: FeatureHealthInput[];
+  available_signals: string[];
 }
 
 export interface SutraFeature {
@@ -61,6 +123,20 @@ export interface SutraFeature {
   label: string;
   node_ids: string[];
   issue_count: number;
+  /** Composite structural health score (heuristic, code-derived). */
+  health: FeatureHealth;
+  /** LLM-generated display name when label_source is ai-inferred. */
+  ai_name?: string;
+  /** One-line LLM summary when label_source is ai-inferred. */
+  ai_summary?: string;
+  /** How the display label was derived — heuristic default, ai-inferred when --ai succeeds. */
+  label_source?: "heuristic" | "ai-inferred";
+  /** Count of confirmed tests edges into this feature. Static linkage, NOT runtime coverage. */
+  test_edge_count: number;
+  /** Distinct test node ids referencing into this feature (sorted). */
+  test_node_ids: string[];
+  /** True iff at least one confirmed tests edge resolves into this feature. Static presence only. */
+  tested: boolean;
 }
 
 /** Author-declared endpoint from feature.sutra.md (intent, not ground truth). */
@@ -77,6 +153,26 @@ export interface SutraContract {
   endpoints: SutraContractEndpoint[];
 }
 
+export type FlowTerminal =
+  | "handler"
+  | "db"
+  | "external"
+  | "unresolved"
+  | "truncated";
+
+export interface SutraFlowStep {
+  node: string;
+  edge: SutraEdge | null;
+}
+
+export interface SutraFlow {
+  id: string;
+  entry: string;
+  steps: SutraFlowStep[];
+  terminal: FlowTerminal;
+  confidence: "confirmed" | "candidate";
+}
+
 export interface SutraGraph {
   version: number;
   repo: string;
@@ -90,6 +186,8 @@ export interface SutraGraph {
   features: SutraFeature[];
   /** Parsed from feature.sutra.md when present; empty otherwise. */
   contracts: SutraContract[];
+  /** Ordered request paths entry → terminal (Story 2.5). */
+  flows: SutraFlow[];
 }
 
 export const SUTRA_DIR = ".sutra";

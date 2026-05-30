@@ -6,8 +6,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { scan, collectFiles } from "./scanner.js";
-import { runChecks, checkContractDrift } from "./checks.js";
-import { buildFeatures } from "./features.js";
+import { runChecks, checkContractDrift, checkUntestedFeatures } from "./checks.js";
+import { buildFeatures, computeFeatureHealth } from "./features.js";
+import { buildFlows } from "./flows.js";
 import { loadContracts } from "./contracts.js";
 import { runPostScanHooks } from "./hooks.js";
 import { diffGraphs, formatDiffSummary } from "./diff.js";
@@ -40,6 +41,7 @@ export interface ScanPipelineResult {
   graphPath: string;
   diffSummary?: string;
   profile?: ScanTimings;
+  flowStats?: { confirmed: number; candidate: number };
 }
 
 export interface WatchOptions {
@@ -100,6 +102,7 @@ export function runScanPipeline(
     issues: [],
     features: [],
     contracts,
+    flows: [],
   };
 
   const writeStart = performance.now();
@@ -109,7 +112,30 @@ export function runScanPipeline(
   const hookIssues = runPostScanHooks(repoRoot, graphPathForHooks);
   issues = [...issues, ...hookIssues];
   graph.issues = issues;
-  graph.features = buildFeatures(nodes, issues);
+  graph.features = buildFeatures(nodes, issues, edges, { contracts });
+  const untestedIssues = checkUntestedFeatures(graph.features);
+  if (untestedIssues.length > 0) {
+    issues = [...issues, ...untestedIssues];
+    graph.issues = issues;
+    for (const feat of graph.features) {
+      feat.issue_count = issues.filter((i) => i.feature === feat.id).length;
+      const featureIssues = issues.filter((i) => i.feature === feat.id);
+      feat.health = computeFeatureHealth({
+        featureIssues,
+        nodeCount: feat.node_ids.length,
+        hasConfidenceData: issues.some((i) => i.confidence !== undefined),
+        hasContractData:
+          contracts.length > 0 ||
+          issues.some((i) =>
+            ["contract_missing_route", "contract_undeclared_route", "contract_parse_error"].includes(i.kind),
+          ),
+        hasTestCoverageData: true,
+        tested: feat.tested,
+      });
+    }
+  }
+  const flowResult = buildFlows(nodes, edges);
+  graph.flows = flowResult.flows;
 
   fs.writeFileSync(graphPathForHooks, JSON.stringify(graph, null, 2), "utf8");
   timings.writeMs = performance.now() - writeStart;
@@ -127,7 +153,16 @@ export function runScanPipeline(
     options.onProfile?.(timings);
   }
 
-  return { graph, graphPath: graphPathForHooks, diffSummary, profile: options?.profile ? timings : undefined };
+  return {
+    graph,
+    graphPath: graphPathForHooks,
+    diffSummary,
+    profile: options?.profile ? timings : undefined,
+    flowStats: {
+      confirmed: flowResult.confirmed,
+      candidate: flowResult.candidate,
+    },
+  };
 }
 
 /** Collect watchable source files under repoRoot. */

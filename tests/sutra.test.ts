@@ -16,9 +16,18 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { scan } from "../src/scanner.js";
 import { runChecks, checkContractDrift } from "../src/checks.js";
-import { buildFeatures } from "../src/features.js";
+import { buildFeatures, computeFeatureHealth, bandForScore, GREEN_MIN, AMBER_MIN } from "../src/features.js";
+import { buildFlows } from "../src/flows.js";
 import { loadContracts } from "../src/contracts.js";
-import type { SutraNode, SutraEdge, SutraIssue } from "../src/types.js";
+import { renderView } from "../src/view.js";
+import {
+  GRAPH_VERSION,
+  CONFIDENCE,
+  type SutraNode,
+  type SutraEdge,
+  type SutraIssue,
+  type Provenance,
+} from "../src/types.js";
 
 // ── path helpers ──────────────────────────────────────────────────────────────
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -32,6 +41,11 @@ const DYNAMIC_MISMATCH = path.resolve(__dirname, "fixtures/dynamic-mismatch");
 const CONTRACT_DECLARED = path.resolve(__dirname, "fixtures/contract-declared");
 const CONTRACT_CLEAN = path.resolve(__dirname, "fixtures/contract-clean");
 const CONTRACT_PARSE_ERROR = path.resolve(__dirname, "fixtures/contract-parse-error");
+const TEMPLATE_URL = path.resolve(__dirname, "fixtures/template-url");
+const FLOW_LOCAL = path.resolve(__dirname, "fixtures/flow-local");
+const FLOW_DYNAMIC = path.resolve(__dirname, "fixtures/flow-dynamic");
+const FLOW_UNRESOLVED = path.resolve(__dirname, "fixtures/flow-unresolved");
+const FLOW_CYCLE = path.resolve(__dirname, "fixtures/flow-cycle");
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 function sortedIds(nodes: SutraNode[]): string[] {
@@ -236,14 +250,14 @@ describe("buildFeatures", () => {
   it("returns at least one feature for the broken fixture", () => {
     const { nodes, edges } = scan(BROKEN);
     const issues = runChecks(nodes, edges);
-    const features = buildFeatures(nodes, issues);
+    const features = buildFeatures(nodes, issues, edges);
     expect(features.length).toBeGreaterThan(0);
   });
 
   it("every feature node_id is present in the nodes list (broken fixture)", () => {
     const { nodes, edges } = scan(BROKEN);
     const issues = runChecks(nodes, edges);
-    const features = buildFeatures(nodes, issues);
+    const features = buildFeatures(nodes, issues, edges);
     const nodeIdSet = new Set(nodes.map((n) => n.id));
     for (const feat of features) {
       for (const nid of feat.node_ids) {
@@ -258,7 +272,7 @@ describe("buildFeatures", () => {
   it("every feature node_id is present in the nodes list (clean fixture)", () => {
     const { nodes, edges } = scan(CLEAN);
     const issues = runChecks(nodes, edges);
-    const features = buildFeatures(nodes, issues);
+    const features = buildFeatures(nodes, issues, edges);
     const nodeIdSet = new Set(nodes.map((n) => n.id));
     for (const feat of features) {
       for (const nid of feat.node_ids) {
@@ -273,7 +287,7 @@ describe("buildFeatures", () => {
   it("feature issue_count matches the issues assigned to nodes in that feature (broken fixture)", () => {
     const { nodes, edges } = scan(BROKEN);
     const issues = runChecks(nodes, edges);
-    const features = buildFeatures(nodes, issues);
+    const features = buildFeatures(nodes, issues, edges);
     // For each feature, collect issue count from the issues array by feature field match
     for (const feat of features) {
       const relatedIssues = issues.filter((i) => i.feature === feat.id);
@@ -284,7 +298,7 @@ describe("buildFeatures", () => {
   it("feature ids are unique", () => {
     const { nodes, edges } = scan(BROKEN);
     const issues = runChecks(nodes, edges);
-    const features = buildFeatures(nodes, issues);
+    const features = buildFeatures(nodes, issues, edges);
     const ids = features.map((f) => f.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
@@ -292,7 +306,7 @@ describe("buildFeatures", () => {
   it("clean fixture features have issue_count === 0 for every feature", () => {
     const { nodes, edges } = scan(CLEAN);
     const issues = runChecks(nodes, edges);
-    const features = buildFeatures(nodes, issues);
+    const features = buildFeatures(nodes, issues, edges);
     for (const feat of features) {
       expect(feat.issue_count).toBe(0);
     }
@@ -580,5 +594,315 @@ describe("loadContracts — clean fixture (no contract file)", () => {
     const { contracts, issues } = loadContracts(CLEAN);
     expect(contracts).toHaveLength(0);
     expect(issues).toHaveLength(0);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 14. CONFIDENCE & PROVENANCE — Story 1.3
+// ═════════════════════════════════════════════════════════════════════════════
+describe("confidence & provenance (Story 1.3)", () => {
+  const VALID_PROVENANCE = new Set<Provenance>([
+    "ast-exact",
+    "heuristic",
+    "template-prefix",
+    "ai-inferred",
+  ]);
+
+  it("GRAPH_VERSION is 5 after flows schema bump", () => {
+    expect(GRAPH_VERSION).toBe(5);
+  });
+
+  it("runChecks issues have provenance in union and confidence in [0,1]", () => {
+    const { nodes, edges } = scan(BROKEN);
+    const issues = runChecks(nodes, edges);
+    expect(issues.length).toBeGreaterThan(0);
+    for (const issue of issues) {
+      expect(issue.provenance).toBeDefined();
+      expect(VALID_PROVENANCE.has(issue.provenance!)).toBe(true);
+      expect(issue.confidence).toBeDefined();
+      expect(issue.confidence!).toBeGreaterThanOrEqual(0);
+      expect(issue.confidence!).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("broken POST /api/capture orphan is ast-exact with higher confidence", () => {
+    const { nodes, edges } = scan(BROKEN);
+    const issues = runChecks(nodes, edges);
+    const captureOrphan = issues.find(
+      (i) =>
+        i.kind === "orphaned_endpoint" &&
+        i.node.includes("POST") &&
+        i.node.includes("/api/capture"),
+    );
+    expect(captureOrphan).toBeDefined();
+    expect(captureOrphan!.provenance).toBe("ast-exact");
+    expect(captureOrphan!.confidence).toBe(CONFIDENCE.AST_EXACT);
+  });
+
+  it("broken missing_handler is ast-exact with high confidence", () => {
+    const { nodes, edges } = scan(BROKEN);
+    const issues = runChecks(nodes, edges);
+    const missing = issues.find((i) => i.kind === "missing_handler");
+    expect(missing).toBeDefined();
+    expect(missing!.provenance).toBe("ast-exact");
+    expect(missing!.confidence).toBe(CONFIDENCE.AST_EXACT);
+  });
+
+  it("template-url orphan is template-prefix with lower confidence than broken capture", () => {
+    const { nodes, edges } = scan(TEMPLATE_URL);
+    const issues = runChecks(nodes, edges);
+    const templateOrphan = issues.find((i) => i.kind === "orphaned_endpoint");
+    expect(templateOrphan, "expected orphaned_endpoint for template URL").toBeDefined();
+    expect(templateOrphan!.provenance).toBe("template-prefix");
+    expect(templateOrphan!.confidence).toBe(CONFIDENCE.TEMPLATE_PREFIX);
+
+    const { nodes: brokenNodes, edges: brokenEdges } = scan(BROKEN);
+    const brokenIssues = runChecks(brokenNodes, brokenEdges);
+    const captureOrphan = brokenIssues.find(
+      (i) =>
+        i.kind === "orphaned_endpoint" &&
+        i.node.includes("POST") &&
+        i.node.includes("/api/capture"),
+    );
+    expect(captureOrphan!.confidence!).toBeGreaterThan(templateOrphan!.confidence!);
+  });
+
+  it("http edges from template literals carry template-prefix provenance", () => {
+    const { edges } = scan(TEMPLATE_URL);
+    const httpEdges = edges.filter((e) => e.kind === "http");
+    expect(httpEdges.length).toBeGreaterThan(0);
+    expect(httpEdges.some((e) => e.provenance === "template-prefix")).toBe(true);
+  });
+
+  it("http edges from string literals carry ast-exact provenance", () => {
+    const { edges } = scan(BROKEN);
+    const captureEdge = edges.find(
+      (e) => e.kind === "http" && e.to.includes("POST") && e.to.includes("/api/capture"),
+    );
+    expect(captureEdge?.provenance).toBe("ast-exact");
+  });
+
+  it("PROXY and EXTERNAL nodes carry heuristic provenance", () => {
+    const { nodes } = scan(PROXIED);
+    const proxyNode = nodes.find((n) => n.name.startsWith("PROXY "));
+    expect(proxyNode?.provenance).toBe("heuristic");
+
+    const { nodes: extNodes } = scan(EXTERNAL);
+    const externalNode = extNodes.find((n) => n.name.startsWith("EXTERNAL "));
+    expect(externalNode?.provenance).toBe("heuristic");
+  });
+
+  it("determinism: two scans produce identical confidence/provenance per issue", () => {
+    const run = () => {
+      const { nodes, edges } = scan(BROKEN);
+      return runChecks(nodes, edges).map((i) => ({
+        kind: i.kind,
+        node: i.node,
+        provenance: i.provenance,
+        confidence: i.confidence,
+      }));
+    };
+    expect(run()).toEqual(run());
+  });
+
+  it("renderView degrades gracefully when confidence/provenance absent", () => {
+    const { nodes, edges } = scan(CLEAN);
+    const issues = runChecks(nodes, edges);
+    const features = buildFeatures(nodes, issues, edges);
+    const legacyGraph = {
+      version: 0,
+      repo: "legacy",
+      scanned_at: "2026-01-01T00:00:00.000Z",
+      commit: "abc1234",
+      nodes,
+      edges,
+      issues: issues.map(({ provenance: _p, confidence: _c, ...rest }) => rest),
+      features,
+      contracts: [],
+      flows: [],
+    };
+    expect(() => renderView(legacyGraph)).not.toThrow();
+    const html = renderView(legacyGraph);
+    expect(html).toContain("<!DOCTYPE html>");
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 15. FEATURE HEALTH — Story 2.4
+// ═════════════════════════════════════════════════════════════════════════════
+describe("feature health — clean fixture (Story 2.4)", () => {
+  it("zero-issue tested feature scores 100 / green", () => {
+    const { nodes, edges } = scan(CLEAN);
+    const issues = runChecks(nodes, edges);
+    const features = buildFeatures(nodes, issues, edges);
+    expect(features.length).toBeGreaterThan(0);
+    const testedNoIssues = features.filter(
+      (f) => f.issue_count === 0 && f.tested,
+    );
+    expect(testedNoIssues.length).toBeGreaterThan(0);
+    for (const feat of testedNoIssues) {
+      expect(feat.health.score).toBe(100);
+      expect(feat.health.band).toBe("green");
+      const issueInput = feat.health.inputs.find((i) => i.signal === "issue_load");
+      expect(issueInput?.available).toBe(true);
+      expect(issueInput?.penalty).toBe(0);
+    }
+  });
+
+  it("deterministic health across two buildFeatures runs", () => {
+    const { nodes, edges } = scan(CLEAN);
+    const issues = runChecks(nodes, edges);
+    const a = buildFeatures(nodes, issues, edges);
+    const b = buildFeatures(nodes, issues, edges);
+    expect(a.map((f) => f.health)).toEqual(b.map((f) => f.health));
+  });
+});
+
+describe("feature health — broken fixture (Story 2.4)", () => {
+  it("orphaned_endpoint drives score down with orphan_ratio penalty > 0", () => {
+    const { nodes, edges } = scan(BROKEN);
+    const issues = runChecks(nodes, edges);
+    const features = buildFeatures(nodes, issues, edges);
+    const libFeature = features.find((f) =>
+      f.node_ids.some((id) => id.includes("lib/client")),
+    );
+    expect(libFeature).toBeDefined();
+    expect(libFeature!.health.score).toBeLessThan(100);
+    const orphanInput = libFeature!.health.inputs.find((i) => i.signal === "orphan_ratio");
+    expect(orphanInput?.penalty).toBeGreaterThan(0);
+    expect(["amber", "red"]).toContain(libFeature!.health.band);
+  });
+});
+
+describe("feature health — band thresholds", () => {
+  it("boundary 49 → red, 50 → amber, 79 → amber, 80 → green", () => {
+    expect(bandForScore(49)).toBe("red");
+    expect(bandForScore(50)).toBe("amber");
+    expect(bandForScore(79)).toBe("amber");
+    expect(bandForScore(80)).toBe("green");
+    expect(GREEN_MIN).toBe(80);
+    expect(AMBER_MIN).toBe(50);
+  });
+});
+
+describe("feature health — optional signal gating", () => {
+  it("confidence/contract unavailable; test_coverage available from tested field", () => {
+    const { nodes, edges } = scan(CLEAN);
+    const issues = runChecks(nodes, edges);
+    const features = buildFeatures(nodes, issues, edges);
+    const feat = features[0]!;
+    for (const sig of ["confidence", "contract_drift"]) {
+      const input = feat.health.inputs.find((i) => i.signal === sig);
+      expect(input?.available).toBe(false);
+      expect(input?.penalty).toBe(0);
+    }
+    const testInput = feat.health.inputs.find((i) => i.signal === "test_coverage");
+    expect(testInput?.available).toBe(true);
+    expect(feat.health.available_signals).toContain("test_coverage");
+  });
+});
+
+describe("feature health — schema guard", () => {
+  it("every feature has valid health score and band", () => {
+    const { nodes, edges } = scan(BROKEN);
+    const issues = runChecks(nodes, edges);
+    const features = buildFeatures(nodes, issues, edges);
+    for (const feat of features) {
+      expect(feat.health.score).toBeGreaterThanOrEqual(0);
+      expect(feat.health.score).toBeLessThanOrEqual(100);
+      expect(["green", "amber", "red"]).toContain(feat.health.band);
+      expect(Number.isInteger(feat.health.score)).toBe(true);
+    }
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 16. REQUEST FLOW TRACING — Story 2.5
+// ═════════════════════════════════════════════════════════════════════════════
+describe("request flow tracing — flow-local (Story 2.5)", () => {
+  it("traces entry → component → http → handler → db as confirmed flow", () => {
+    const { nodes, edges } = scan(FLOW_LOCAL);
+    const { flows } = buildFlows(nodes, edges);
+    expect(flows.length).toBeGreaterThanOrEqual(1);
+    const flow = flows.find((f) => f.id.startsWith("flow:app/widget/page.tsx"));
+    expect(flow).toBeDefined();
+    expect(flow!.terminal).toBe("db");
+    expect(flow!.confidence).toBe("confirmed");
+    expect(flow!.steps.length).toBeGreaterThanOrEqual(3);
+    expect(flow!.steps[0]!.edge).toBeNull();
+    expect(flow!.steps.some((s) => s.edge?.kind === "http")).toBe(true);
+  });
+
+  it("deterministic flows sorted by id across two runs", () => {
+    const run = () => {
+      const { nodes, edges } = scan(FLOW_LOCAL);
+      return buildFlows(nodes, edges).flows;
+    };
+    expect(run()).toEqual(run());
+    const flows = run();
+    const ids = flows.map((f) => f.id);
+    expect([...ids].sort()).toEqual(ids);
+  });
+});
+
+describe("request flow tracing — flow-dynamic", () => {
+  it("dynamic-segment http hop yields candidate confidence", () => {
+    const { nodes, edges } = scan(FLOW_DYNAMIC);
+    const { flows } = buildFlows(nodes, edges);
+    expect(flows.length).toBeGreaterThanOrEqual(1);
+    const flow = flows[0]!;
+    expect(flow.confidence).toBe("candidate");
+    expect(flow.steps.some((s) => s.edge?.kind === "http")).toBe(true);
+  });
+});
+
+describe("request flow tracing — flow-unresolved", () => {
+  it("unresolved http ends with terminal unresolved, not dropped", () => {
+    const { nodes, edges } = scan(FLOW_UNRESOLVED);
+    const { flows } = buildFlows(nodes, edges);
+    const flow = flows.find((f) => f.terminal === "unresolved");
+    expect(flow).toBeDefined();
+    expect(flow!.confidence).toBe("candidate");
+  });
+});
+
+describe("request flow tracing — flow-cycle", () => {
+  it("cycle detection yields truncated terminal", () => {
+    const { nodes, edges } = scan(FLOW_CYCLE);
+    const { flows } = buildFlows(nodes, edges);
+    expect(flows.length).toBeGreaterThanOrEqual(1);
+    const flow = flows[0]!;
+    expect(flow.terminal).toBe("truncated");
+    expect(flow.confidence).toBe("candidate");
+  });
+});
+
+describe("request flow tracing — proxied regression", () => {
+  it("proxied fixture still has zero orphaned_endpoint issues", () => {
+    const { nodes, edges } = scan(PROXIED);
+    const issues = runChecks(nodes, edges);
+    expect(issues.filter((i) => i.kind === "orphaned_endpoint")).toHaveLength(0);
+  });
+
+  it("renderView tolerates flows field on graph", () => {
+    const { nodes, edges } = scan(FLOW_LOCAL);
+    const issues = runChecks(nodes, edges);
+    const features = buildFeatures(nodes, issues, edges);
+    const { flows } = buildFlows(nodes, edges);
+    const graph = {
+      version: GRAPH_VERSION,
+      repo: "flow-local",
+      scanned_at: "2026-01-01T00:00:00.000Z",
+      commit: "test",
+      nodes,
+      edges,
+      issues,
+      features,
+      contracts: [],
+      flows,
+    };
+    expect(() => renderView(graph)).not.toThrow();
+    const html = renderView(graph);
+    expect(html).toContain("<!DOCTYPE html>");
   });
 });

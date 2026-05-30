@@ -5,9 +5,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { GRAPH_VERSION, type SutraGraph } from "./types.js";
+import { buildFeatures } from "./features.js";
 
 export const SUPPORTED_MIGRATIONS: Array<{ from: number; to: number }> = [
   { from: 0, to: 1 },
+  { from: 1, to: 2 },
+  { from: 2, to: 3 },
+  { from: 3, to: 4 },
+  { from: 4, to: 5 },
 ];
 
 /** Migrate a graph object in-memory. Returns migrated graph. */
@@ -31,6 +36,46 @@ export function migrateGraph(raw: Record<string, unknown>): SutraGraph {
     }
     raw.version = 1;
     version = 1;
+  }
+
+  // v1 → v2: confidence/provenance are optional on nodes/edges/issues — structure unchanged
+  if (version === 1) {
+    raw.version = 2;
+    version = 2;
+  }
+
+  // v2 → v3: required health on each feature
+  if (version === 2) {
+    const g = raw as unknown as SutraGraph;
+    const nodes = Array.isArray(g.nodes) ? g.nodes : [];
+    const edges = Array.isArray(g.edges) ? g.edges : [];
+    const issueList = Array.isArray(g.issues) ? g.issues : [];
+    const contracts = Array.isArray(g.contracts) ? g.contracts : [];
+    raw.features = buildFeatures(nodes, issueList, edges, { contracts });
+    raw.version = 3;
+    version = 3;
+  }
+
+  // v3 → v4: add flows: []
+  if (version === 3) {
+    if (!Array.isArray(raw.flows)) {
+      raw.flows = [];
+    }
+    raw.version = 4;
+    version = 4;
+  }
+
+  // v4 → v5: test linkage fields on features
+  if (version === 4) {
+    const g = raw as unknown as SutraGraph;
+    const nodes = Array.isArray(g.nodes) ? g.nodes : [];
+    const edges = Array.isArray(g.edges) ? g.edges : [];
+    const issueList = Array.isArray(g.issues) ? g.issues : [];
+    const contracts = Array.isArray(g.contracts) ? g.contracts : [];
+    raw.features = buildFeatures(nodes, issueList, edges, { contracts });
+    if (!Array.isArray(raw.flows)) raw.flows = [];
+    raw.version = 5;
+    version = 5;
   }
 
   if (version !== GRAPH_VERSION) {

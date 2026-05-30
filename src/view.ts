@@ -13,6 +13,19 @@ function esc(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
+/** Build issue list item with optional provenance/confidence chip. */
+function formatIssueRow(iss: SutraIssue): string {
+  const lowConf =
+    iss.provenance === "template-prefix" ||
+    (iss.confidence !== undefined && iss.confidence < 0.7);
+  const extraClass = lowConf ? " issue-low-confidence" : "";
+  const chip =
+    iss.provenance !== undefined && iss.confidence !== undefined
+      ? `<span class="prov-chip">${esc(iss.provenance)} · ${iss.confidence.toFixed(2)}</span> `
+      : "";
+  return `<li class="issue issue-${esc(iss.severity)}${extraClass}"><span class="sev">${esc(iss.severity.toUpperCase())}</span> ${chip}${esc(iss.message)}</li>`;
+}
+
 /**
  * Sanitize a label for use inside a Mermaid flowchart.
  * Mermaid breaks on: ( ) { } [ ] " ' < > ; #
@@ -46,7 +59,21 @@ function mermaidShape(type: string): [string, string] {
   }
 }
 
-/** Badge color based on issue severity set. */
+/** Badge color from structural health band (heuristic). */
+function healthBadgeClass(band: string): string {
+  switch (band) {
+    case "green":
+      return "badge-health-green";
+    case "amber":
+      return "badge-health-amber";
+    case "red":
+      return "badge-health-red";
+    default:
+      return "badge-ok";
+  }
+}
+
+/** Fallback badge color based on issue severity set. */
 function badgeClass(issues: SutraIssue[]): string {
   if (issues.length === 0) return "badge-ok";
   if (issues.some((i) => i.severity === "error")) return "badge-error";
@@ -116,10 +143,7 @@ function buildReconcilePanel(reconcile: ReconcileOutput): string {
   if (!reconcile) return "";
 
   const orphanRows = reconcile.issues
-    .map(
-      (iss) =>
-        `<li class="issue issue-${esc(iss.severity)}"><span class="sev">${esc(iss.severity.toUpperCase())}</span> ${esc(iss.message)}</li>`,
-    )
+    .map((iss) => formatIssueRow(iss))
     .join("\n");
 
   return `
@@ -154,10 +178,7 @@ function buildContractDriftPanel(graph: SutraGraph): string {
       const contract = graph.contracts.find((c) => c.feature === feature);
       const source = contract?.file ?? "unknown";
       const rows = issues
-        .map(
-          (iss) =>
-            `<li class="issue issue-${esc(iss.severity)}"><span class="sev">${esc(iss.severity.toUpperCase())}</span> ${esc(iss.message)}</li>`,
-        )
+        .map((iss) => formatIssueRow(iss))
         .join("\n");
       return `<div class="drift-group"><strong>${esc(feature)}</strong> <span class="source">(${esc(source)})</span><ul class="issue-list">${rows}</ul></div>`;
     })
@@ -217,12 +238,7 @@ function buildDetailPanel(graph: SutraGraph, feature: SutraFeature, featureIssue
 
   const mermaidSrc = buildMermaid(graph, cappedIds, truncated);
 
-  const issueRows = featureIssues
-    .map(
-      (iss) =>
-        `<li class="issue issue-${esc(iss.severity)}"><span class="sev">${esc(iss.severity.toUpperCase())}</span> ${esc(iss.message)}</li>`
-    )
-    .join("\n");
+  const issueRows = featureIssues.map((iss) => formatIssueRow(iss)).join("\n");
 
   return `
 <div class="detail-panel" id="detail-${esc(feature.id)}" style="display:none">
@@ -261,14 +277,26 @@ export function renderView(
       const issues = issuesByFeature.get(feat.id) ?? [];
       const nodeIds = new Set(feat.node_ids);
       const ec = edgeCount(graph, nodeIds);
-      const cls = badgeClass(issues);
+      const healthBand = feat.health?.band ?? (issues.length === 0 ? "green" : issues.some((i) => i.severity === "error") ? "red" : "amber");
+      const hcls = healthBadgeClass(healthBand);
+      const healthScore = feat.health?.score ?? 0;
+      const isAi = feat.label_source === "ai-inferred" && feat.ai_name;
+      const displayLabel = isAi ? feat.ai_name! : feat.label;
+      const aiBadge = isAi
+        ? `<span class="badge badge-ai" title="ai-inferred label">AI</span>`
+        : "";
+      const aiSummary = isAi && feat.ai_summary
+        ? `<div class="card-ai-summary">${esc(feat.ai_summary)}</div>`
+        : "";
       return `
 <div class="card" data-feature="${esc(feat.id)}" tabindex="0" role="button" aria-expanded="false">
   <div class="card-header">
-    <span class="card-label">${esc(feat.label)}</span>
-    <span class="badge ${cls}">${feat.issue_count} issue${feat.issue_count !== 1 ? "s" : ""}</span>
+    <span class="card-label">${esc(displayLabel)} ${aiBadge}</span>
+    <span class="badge ${hcls}" title="Heuristic structural health score">${healthScore} · ${esc(healthBand)}</span>
   </div>
-  <div class="card-meta">${feat.node_ids.length} node${feat.node_ids.length !== 1 ? "s" : ""} &middot; ${ec} edge${ec !== 1 ? "s" : ""}</div>
+  ${aiSummary}
+  <div class="card-meta">${feat.node_ids.length} node${feat.node_ids.length !== 1 ? "s" : ""} &middot; ${ec} edge${ec !== 1 ? "s" : ""} &middot; ${feat.issue_count} issue${feat.issue_count !== 1 ? "s" : ""}${feat.tested !== undefined ? ` &middot; tests: ${feat.test_edge_count ?? 0} (static)` : ""}${feat.tested === false ? ' &middot; <span class="untested-tag">untested</span>' : ""}</div>
+  <div class="card-health-note">Heuristic structural health score — not runtime correctness</div>
 </div>`;
     })
     .join("\n");
@@ -314,6 +342,13 @@ header .counts span { background: #334155; padding: 0.15rem 0.6rem; border-radiu
 .badge-ok { background: #dcfce7; color: #166534; }
 .badge-warn { background: #fef9c3; color: #854d0e; }
 .badge-error { background: #fee2e2; color: #991b1b; }
+.badge-health-green { background: #dcfce7; color: #166534; }
+.badge-health-amber { background: #fef9c3; color: #854d0e; }
+.badge-health-red { background: #fee2e2; color: #991b1b; }
+.badge-ai { background: #ede9fe; color: #5b21b6; font-size: 0.65rem; margin-left: 0.25rem; }
+.card-ai-summary { font-size: 0.78rem; color: #64748b; margin: 0.25rem 0 0.35rem; line-height: 1.35; }
+.untested-tag { color: #64748b; font-style: italic; }
+.card-health-note { font-size: 0.68rem; color: #94a3b8; margin-top: 0.35rem; font-style: italic; }
 .card-meta { font-size: 0.78rem; color: #64748b; }
 .detail-panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 1.25rem; }
 .detail-panel h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 0.3rem; }
@@ -325,6 +360,9 @@ header .counts span { background: #334155; padding: 0.15rem 0.6rem; border-radiu
 .issue-error { background: #fee2e2; color: #7f1d1d; }
 .issue-warn { background: #fef9c3; color: #713f12; }
 .issue-info { background: #e0f2fe; color: #0c4a6e; }
+.issue-low-confidence { opacity: 0.85; border-left: 3px solid #94a3b8; }
+.prov-chip { font-size: 0.72rem; font-weight: 600; color: #64748b; background: #f1f5f9; padding: 0.1rem 0.35rem; border-radius: 3px; margin-right: 0.25rem; }
+.issue-low-confidence .prov-chip { color: #92400e; background: #fef3c7; }
 .sev { font-weight: 700; margin-right: 0.4rem; }
 .no-issues { font-size: 0.82rem; color: #16a34a; }
 .diff-panel { background: #fff; border: 1px solid #cbd5e1; border-left: 4px solid #6366f1; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.25rem; }

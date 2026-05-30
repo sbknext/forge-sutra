@@ -20,10 +20,30 @@ describe("migrateGraph (SUTRA-8.1)", () => {
     expect(raw.contracts).toBeUndefined();
 
     const graph = migrateGraph(raw);
-    expect(graph.version).toBe(1);
+    expect(graph.version).toBe(5);
     expect(graph.contracts).toEqual([]);
     expect(graph.nodes.length).toBe(1);
     expect(graph.features.length).toBe(1);
+    expect(graph.features[0]?.health).toBeDefined();
+    expect(graph.features[0]?.tested).toBeDefined();
+    expect(graph.flows).toEqual([]);
+  });
+
+  it("v1 → v5 bumps through intermediate versions", () => {
+    const v0 = JSON.parse(fs.readFileSync(V0_FIXTURE, "utf8")) as Record<string, unknown>;
+    const v1only = { ...v0, version: 1, contracts: [] };
+    const v5 = migrateGraph(v1only);
+    expect(v5.version).toBe(5);
+  });
+
+  it("v3 → v5 adds flows and test linkage fields", () => {
+    const raw = JSON.parse(fs.readFileSync(V0_FIXTURE, "utf8")) as Record<string, unknown>;
+    raw.version = 3;
+    raw.contracts = [];
+    const v5 = migrateGraph(raw);
+    expect(v5.version).toBe(5);
+    expect(v5.flows).toEqual([]);
+    expect(v5.features[0]?.tested).toBeDefined();
   });
 
   it("already current version is no-op", () => {
@@ -46,10 +66,10 @@ describe("migrateGraph (SUTRA-8.1)", () => {
     const result = migrateFile(dest);
     expect(result.migrated).toBe(true);
     expect(result.fromVersion).toBe(0);
-    expect(result.toVersion).toBe(1);
+    expect(result.toVersion).toBe(5);
 
     const written = JSON.parse(fs.readFileSync(dest, "utf8"));
-    expect(written.version).toBe(1);
+    expect(written.version).toBe(5);
     expect(written.contracts).toEqual([]);
   });
 

@@ -17,7 +17,7 @@ export function exportGraphSchema(): string {
     title: "SutraGraph",
     description: "graph.json schema for forge-sutra scans (candidate/heuristic)",
     type: "object",
-    required: ["version", "repo", "scanned_at", "commit", "nodes", "edges", "issues", "features", "contracts"],
+    required: ["version", "repo", "scanned_at", "commit", "nodes", "edges", "issues", "features", "contracts", "flows"],
     properties: {
       version: { type: "integer", const: GRAPH_VERSION },
       repo: { type: "string" },
@@ -28,6 +28,7 @@ export function exportGraphSchema(): string {
       issues: { type: "array", items: { $ref: "#/definitions/SutraIssue" } },
       features: { type: "array", items: { $ref: "#/definitions/SutraFeature" } },
       contracts: { type: "array", items: { $ref: "#/definitions/SutraContract" } },
+      flows: { type: "array", items: { $ref: "#/definitions/SutraFlow" } },
     },
     definitions: {
       SutraNode: {
@@ -65,12 +66,26 @@ export function exportGraphSchema(): string {
       },
       SutraFeature: {
         type: "object",
-        required: ["id", "label", "node_ids", "issue_count"],
+        required: ["id", "label", "node_ids", "issue_count", "health", "test_edge_count", "test_node_ids", "tested"],
         properties: {
           id: { type: "string" },
           label: { type: "string" },
           node_ids: { type: "array", items: { type: "string" } },
           issue_count: { type: "integer" },
+          test_edge_count: { type: "integer" },
+          test_node_ids: { type: "array", items: { type: "string" } },
+          tested: { type: "boolean" },
+          label_source: { enum: ["heuristic", "ai-inferred"] },
+          health: {
+            type: "object",
+            required: ["score", "band", "inputs", "available_signals"],
+            properties: {
+              score: { type: "integer", minimum: 0, maximum: 100 },
+              band: { enum: ["green", "amber", "red"] },
+              inputs: { type: "array" },
+              available_signals: { type: "array", items: { type: "string" } },
+            },
+          },
         },
       },
       SutraContract: {
@@ -90,6 +105,19 @@ export function exportGraphSchema(): string {
               },
             },
           },
+        },
+      },
+      SutraFlow: {
+        type: "object",
+        required: ["id", "entry", "steps", "terminal", "confidence"],
+        properties: {
+          id: { type: "string" },
+          entry: { type: "string" },
+          steps: { type: "array" },
+          terminal: {
+            enum: ["handler", "db", "external", "unresolved", "truncated"],
+          },
+          confidence: { enum: ["confirmed", "candidate"] },
         },
       },
     },

@@ -107,9 +107,9 @@ describe("language-agnostic core (Story 4.1)", () => {
     expect(ids).toEqual(again);
   });
 
-  it("extractor registry contains TsExtractor only", () => {
+  it("extractor registry contains TsExtractor and PythonFrappeExtractor", () => {
     const reg = registeredExtractors();
-    expect(reg.length).toBe(1);
-    expect(reg[0]!.language).toBe("ts");
+    expect(reg.length).toBe(2);
+    expect(reg.map((e) => e.language)).toEqual(["ts", "python-frappe"]);
   });
 });

@@ -283,3 +283,19 @@ Inline property calls (e.g. `db.query()` without a resolved `calls` edge) are **
 ## Story 3.5 — Live watch + SSE push (2026-05-30)
 
 **Integration:** `runWatch` in `src/watch-viewer.ts` extends `startViewerServer` with `sse: true` → `GET /events` (`text/event-stream`). On debounced FS change (`chokidar`, `WATCH_DEBOUNCE_MS=200`), re-runs `runScanPipeline`, writes `.sutra/graph.json`, broadcasts `event: graph`. Scan failures emit `event: scan-error` without replacing last good graph. `.sutra` ignored in watcher to prevent feedback loop.
+
+---
+
+## Story 4.2 — Python / Frappe extractor (2026-05-30)
+
+**Parser:** `tree-sitter` + `tree-sitter-python` (Node native bindings — no CPython shell-out).
+
+**Validation (frappe-clean fixture):** 13 python-frappe nodes, 2 hook edges, 0 issues. Extracts `@frappe.whitelist()` endpoints, `Document` controller hooks, and resolves `doc_events` / `scheduler_events` when dotted paths match real functions.
+
+### Python / Frappe extractor — known limits
+
+- Dynamically-built dotted paths in hooks are not resolved.
+- `frappe.get_attr()` / `frappe.call()` string targets are skipped.
+- Runtime-overridden hooks are not visible statically.
+- JS DocType client scripts remain TS extractor territory.
+- Permission queries, `frappe.enqueue`, Powerflow/Latte edges out of scope.

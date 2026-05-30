@@ -6,11 +6,12 @@
 import path from "node:path";
 import type { SutraNode, SutraEdge } from "./types.js";
 import { TsExtractor } from "./extractors/ts.js";
+import { PythonFrappeExtractor } from "./extractors/python-frappe.js";
 import type { Extractor } from "./extractor.js";
 
 export { collectFiles } from "./extractors/ts.js";
 
-const EXTRACTORS: Extractor[] = [new TsExtractor()];
+const EXTRACTORS: Extractor[] = [new TsExtractor(), new PythonFrappeExtractor()];
 
 export function scan(repoRoot: string): { nodes: SutraNode[]; edges: SutraEdge[] } {
   const absRoot = path.resolve(repoRoot);

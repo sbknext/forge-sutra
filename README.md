@@ -53,7 +53,7 @@ sutra scan         # alias — same command
 ```
 
 Options:
-- `--watch` — debounced re-scan on TS/JS file changes. Snapshots previous graph to `.sutra/graph.prev.json`, writes `.sutra/diff.json`, prints delta summary. Ctrl+C to stop. Static scan only — not a runtime monitor.
+- `--watch` — debounced re-scan on TS/JS file changes (CLI-only; for live viewer use `watch` command). Snapshots previous graph to `.sutra/graph.prev.json`, writes `.sutra/diff.json`, prints delta summary. Ctrl+C to stop. Static scan only — not a runtime monitor.
 - `--profile` — print phase timings (walk, parse, checks, write) to stderr. Candidate timings only — environment-dependent, not an SLA.
 - `--ai` — opt-in LLM feature naming (`ai_name` / `ai_summary` on features). Requires `SUTRA_AI_API_KEY`. Offline/no-key scans fall back to heuristic labels.
 
@@ -86,6 +86,15 @@ forge-sutra viewer --port 4600
 ```
 
 The static `forge-sutra view` command remains the offline/no-server fallback.
+
+### `forge-sutra watch [repoPath]`
+
+Live mode: starts the viewer SPA, runs an initial scan, then re-scans on file changes (debounced) and **pushes** the updated graph to the browser via Server-Sent Events. Binds **127.0.0.1** only. Uses incremental scan cache when available.
+
+```
+forge-sutra watch
+forge-sutra watch --port 4600
+```
 
 ### `forge-sutra diff [pathA] [pathB]`
 

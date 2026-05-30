@@ -277,3 +277,9 @@ Inline property calls (e.g. `db.query()` without a resolved `calls` edge) are **
 **Stack:** Option A — zero-build vanilla SPA (`viewer/index.html` + `app.js` + `styles.css`) served by `src/viewer/server.ts` on `node:http`. No Vite/framework; fits `tsc`-only build. Story 3.2+ may revisit if interactivity demands a framework.
 
 **Architecture:** `sutra viewer` binds `127.0.0.1:4577`, serves SPA + `GET /graph.json` (fresh disk read, `Cache-Control: no-store`). Pure render helpers extracted to `src/viewer/render-shared.ts`; static `sutra view` unchanged as offline fallback.
+
+---
+
+## Story 3.5 — Live watch + SSE push (2026-05-30)
+
+**Integration:** `runWatch` in `src/watch-viewer.ts` extends `startViewerServer` with `sse: true` → `GET /events` (`text/event-stream`). On debounced FS change (`chokidar`, `WATCH_DEBOUNCE_MS=200`), re-runs `runScanPipeline`, writes `.sutra/graph.json`, broadcasts `event: graph`. Scan failures emit `event: scan-error` without replacing last good graph. `.sutra` ignored in watcher to prevent feedback loop.

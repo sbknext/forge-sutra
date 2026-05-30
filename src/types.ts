@@ -1,0 +1,96 @@
+// graph.json contract — THE single source of truth. Every consumer reads this.
+// Phase 0. Keep ids stable + deterministic so future phases can diff scans.
+
+export const GRAPH_VERSION = 0;
+
+export type NodeType =
+  | "route"
+  | "handler"
+  | "component"
+  | "test"
+  | "endpoint"
+  | "module"
+  | "function";
+
+export type EdgeKind = "calls" | "imports" | "renders" | "tests" | "http";
+
+export type Severity = "error" | "warn" | "info";
+
+export type IssueKind =
+  | "orphaned_endpoint"
+  | "missing_handler"
+  | "dangling_test_ref";
+
+export interface SutraNode {
+  /** Stable deterministic id: `relative/path#symbol`. */
+  id: string;
+  type: NodeType;
+  name: string;
+  /** Repo-relative POSIX path. */
+  file: string;
+  line: number;
+  /** Best-effort param/return shape, e.g. "{ email: string }". null if unknown. */
+  data_shape: string | null;
+  /** Heuristic feature grouping id. */
+  feature: string;
+}
+
+export interface SutraEdge {
+  /** node id (or a synthetic id for an http target/endpoint). */
+  from: string;
+  to: string;
+  kind: EdgeKind;
+}
+
+export interface SutraIssue {
+  severity: Severity;
+  kind: IssueKind;
+  /** The thing in question (node id, "METHOD /path", symbol, etc.). */
+  node: string;
+  feature: string;
+  message: string;
+}
+
+export interface SutraFeature {
+  id: string;
+  label: string;
+  node_ids: string[];
+  issue_count: number;
+}
+
+export interface SutraGraph {
+  version: number;
+  repo: string;
+  /** ISO 8601 UTC. */
+  scanned_at: string;
+  /** Short commit hash, or "unknown" if not a git repo. */
+  commit: string;
+  nodes: SutraNode[];
+  edges: SutraEdge[];
+  issues: SutraIssue[];
+  features: SutraFeature[];
+}
+
+export const SUTRA_DIR = ".sutra";
+export const GRAPH_FILE = "graph.json";
+export const VIEW_FILE = "view.html";
+
+/** Directories never scanned. */
+export const EXCLUDED_DIRS = new Set([
+  "node_modules",
+  "dist",
+  "build",
+  ".next",
+  ".sutra",
+  ".git",
+  "coverage",
+  "out",
+]);
+
+/** Extensions scanned this phase. */
+export const SCAN_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);
+
+/** True for files we skip even if extension matches (e.g. minified). */
+export function isExcludedFile(fileName: string): boolean {
+  return fileName.endsWith(".min.js") || fileName.endsWith(".d.ts");
+}

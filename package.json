@@ -1,0 +1,29 @@
+{
+  "name": "sutra",
+  "version": "0.0.0",
+  "description": "Forge subcommand: point it at a repo, get a structural flow graph (graph.json) + a local project view + code-derivable drift checks. Phase 0.",
+  "type": "module",
+  "bin": {
+    "forge-sutra": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "lint": "tsc --noEmit",
+    "sutra": "node dist/cli.js"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "ts-morph": "^23.0.0",
+    "chalk": "^5.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "MIT"
+}

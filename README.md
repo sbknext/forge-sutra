@@ -55,6 +55,7 @@ sutra scan         # alias — same command
 Options:
 - `--watch` — debounced re-scan on TS/JS file changes. Snapshots previous graph to `.sutra/graph.prev.json`, writes `.sutra/diff.json`, prints delta summary. Ctrl+C to stop. Static scan only — not a runtime monitor.
 - `--profile` — print phase timings (walk, parse, checks, write) to stderr. Candidate timings only — environment-dependent, not an SLA.
+- `--ai` — opt-in LLM feature naming (`ai_name` / `ai_summary` on features). Requires `SUTRA_AI_API_KEY`. Offline/no-key scans fall back to heuristic labels.
 
 What it does:
 1. Walks the repo (skips `node_modules`, `dist`, `.next`, `.git`, `coverage`, `out`).
@@ -204,12 +205,12 @@ When `GRAPH_VERSION` bumps, run `forge-sutra migrate` on cached graphs before di
   "health": {
     "score": 72,
     "band": "amber",
-    "inputs": [
-      { "signal": "issue_load", "available": true, "weight": 0.35, "penalty": 20, "detail": "..." },
-      { "signal": "orphan_ratio", "available": true, "weight": 0.35, "penalty": 15, "detail": "..." }
-    ],
+    "inputs": [ ... ],
     "available_signals": ["issue_load", "orphan_ratio"]
-  }
+  },
+  "label_source": "heuristic",   // or "ai-inferred" when scan --ai succeeds
+  "ai_name": "Authentication",   // optional; display only when ai-inferred
+  "ai_summary": "Login and OTP." // optional; one line, length-capped
 }
 ```
 

@@ -248,6 +248,7 @@ export function buildFeatures(
     features.push({
       id,
       label: toTitleCase(id),
+      label_source: "heuristic",
       node_ids,
       issue_count: issueCount.get(id) ?? 0,
       health,

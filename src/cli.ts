@@ -25,6 +25,7 @@ import { runScanPipeline, startWatch, type ScanTimings } from "./watch.js";
 import { reconcileGraphs, buildReconcileOutput, type ReconcileOutput } from "./reconcile.js";
 import { migrateFile } from "./migrate.js";
 import { exportContracts, exportGraphSchema, exportIssues, writeExport } from "./export.js";
+import { inferFeatureLabels, countAiLabels } from "./ai/infer-features.js";
 import type { IssueKind, SutraGraph, SutraIssue } from "./types.js";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -147,10 +148,10 @@ function printProfile(timings: ScanTimings): void {
   console.error(chalk.gray(`    total:  ${timings.totalMs.toFixed(0)}ms\n`));
 }
 
-function cmdScan(
+async function cmdScan(
   repoPath: string | undefined,
-  opts: { watch?: boolean; profile?: boolean },
-): void {
+  opts: { watch?: boolean; profile?: boolean; ai?: boolean },
+): Promise<void> {
   const cwd = process.cwd();
   const repoRoot = path.resolve(repoPath ?? cwd);
   const commit = getCommit(repoRoot);
@@ -187,10 +188,33 @@ function cmdScan(
 
   console.log(chalk.bold(`\nSutra scan → ${repoRoot}\n`));
 
-  const { graph, graphPath } = runScanPipeline(repoRoot, cwd, commit, {
-    profile: opts.profile,
-    onProfile: opts.profile ? printProfile : undefined,
-  });
+  const { graph, graphPath } = await (async () => {
+    const result = runScanPipeline(repoRoot, cwd, commit, {
+      profile: opts.profile,
+      onProfile: opts.profile ? printProfile : undefined,
+    });
+    if (opts.ai) {
+      const features = await inferFeatureLabels(result.graph, {
+        enabled: true,
+        onSkip: (reason) => {
+          console.error(chalk.yellow(`  ${reason}`));
+        },
+      });
+      result.graph.features = features;
+      const counts = countAiLabels(features);
+      console.error(
+        chalk.gray(
+          `  AI naming: ${counts.ai} ai-inferred · ${counts.heuristic} heuristic`,
+        ),
+      );
+      fs.writeFileSync(
+        result.graphPath,
+        JSON.stringify(result.graph, null, 2),
+        "utf8",
+      );
+    }
+    return result;
+  })();
   printScanSummary(graph, graphPath);
 }
 
@@ -494,8 +518,9 @@ program
   )
   .option("--watch", "Re-scan on file changes (debounced, static scan only)")
   .option("--profile", "Print phase timings to stderr (candidate, environment-dependent)")
-  .action((repoPath: string | undefined, opts: { watch?: boolean; profile?: boolean }) => {
-    cmdScan(repoPath, opts);
+  .option("--ai", "Enable LLM feature naming (requires SUTRA_AI_API_KEY; opt-in)")
+  .action(async (repoPath: string | undefined, opts: { watch?: boolean; profile?: boolean; ai?: boolean }) => {
+    await cmdScan(repoPath, opts);
   });
 
 program

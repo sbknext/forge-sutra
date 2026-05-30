@@ -124,6 +124,12 @@ export interface SutraFeature {
   issue_count: number;
   /** Composite structural health score (heuristic, code-derived). */
   health: FeatureHealth;
+  /** LLM-generated display name when label_source is ai-inferred. */
+  ai_name?: string;
+  /** One-line LLM summary when label_source is ai-inferred. */
+  ai_summary?: string;
+  /** How the display label was derived — heuristic default, ai-inferred when --ai succeeds. */
+  label_source?: "heuristic" | "ai-inferred";
 }
 
 /** Author-declared endpoint from feature.sutra.md (intent, not ground truth). */

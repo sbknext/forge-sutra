@@ -1,6 +1,6 @@
 # Sutra
 
-Static structural graph tool for JavaScript / TypeScript repositories. Points at a repo, produces a structural flow graph (`graph.json`) and a local HTML view. **v1.0.0** — Phases 0–7 complete.
+Static structural graph tool for JavaScript / TypeScript and **Frappe / Python** repositories. Points at a repo, produces a structural flow graph (`graph.json`) and a local HTML view. **v1.0.0** — Phases 0–7 complete.
 
 ![Sutra overview — echo-ai scan](docs/overview.png)
 
@@ -293,3 +293,4 @@ Known limitations:
 - **Contracts:** `feature.sutra.md` is author-declared intent, not ground truth. Undeclared routes are warn-only when a contract file exists.
 - **CSS/asset imports:** Non-JS/TS import targets are ignored in `missing_handler` checks.
 - **Express variable mounts:** Routers mounted via variable (e.g., `app.use(prefix, router)`) may not resolve the full path correctly.
+- **Frappe / Python (Epic 4.2):** `@frappe.whitelist()` → endpoints, DocType controllers → handlers, `hooks.py` `doc_events` / `scheduler_events` → edges. Same candidate/heuristic standard as TS. Dynamically-built dotted paths, `frappe.get_attr()` / `frappe.call()`, and runtime-overridden hooks are not confirmed.

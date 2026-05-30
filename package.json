@@ -4,7 +4,8 @@
   "description": "Forge subcommand: point it at a repo, get a structural flow graph (graph.json) + a local project view + code-derivable drift checks. Phase 0.",
   "type": "module",
   "bin": {
-    "forge-sutra": "./dist/cli.js"
+    "forge-sutra": "./dist/cli.js",
+    "sutra": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc",

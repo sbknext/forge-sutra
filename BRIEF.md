@@ -1,5 +1,7 @@
 # Sutra — Phase 0 (Executor Brief)
 
+> **Phase 2 pointer:** Phase 0 spec preserved below for history. Current work: `_bmad/sutra-phase2/PLAN.md` and `docs/PHASE2-PLAN.md`. Phase 1 complete (81 tests, GRAPH_VERSION=1).
+
 > Saved verbatim from the planner. This is the spec. Build Phase 0 ONLY.
 
 ## Mission

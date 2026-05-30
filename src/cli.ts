@@ -335,19 +335,22 @@ function cmdView(): void {
 
 const program = new Command();
 
+const CLAIM_BOUNDS =
+  "Candidate results only — static heuristic approximation, not complete analysis.";
+
 program
-  .name("sutra")
+  .name("forge-sutra")
   .description(
-    "Static structural graph tool. Scans a repo and writes .sutra/graph.json + view.html. " +
-    "Candidate results only — approximation, not complete analysis."
+    "Static structural graph tool for JS/TS repos. Writes .sutra/graph.json + view.html. " +
+    CLAIM_BOUNDS
   )
   .version("0.0.0");
 
 program
   .command("scan [repoPath]")
   .description(
-    "Scan a repo and write .sutra/graph.json. " +
-    "Default repoPath = current working directory."
+    "Scan a repo and write .sutra/graph.json (default: cwd). " +
+    "Static structural scan — candidate results."
   )
   .option("--watch", "Re-scan on file changes (debounced, static scan only)")
   .action((repoPath: string | undefined, opts: { watch?: boolean }) => {
@@ -357,7 +360,8 @@ program
 program
   .command("view")
   .description(
-    "Read .sutra/graph.json and write .sutra/view.html, then open it."
+    "Read .sutra/graph.json and write .sutra/view.html, then open it. " +
+    "Display-only — heuristic / candidate."
   )
   .action(() => {
     cmdView();

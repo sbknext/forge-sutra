@@ -19,7 +19,22 @@ export function relPosix(repoRoot: string, absFile: string): string {
   return toPosix(path.relative(repoRoot, absFile));
 }
 
-/** Synthetic id for an HTTP target, e.g. "http:POST /api/capture". Stable for edges/issues. */
-export function httpTargetId(method: string, urlPath: string): string {
-  return `http:${method.toUpperCase()} ${urlPath}`;
+/**
+ * Synthetic id for an HTTP target, e.g. "http:POST /api/capture".
+ * When host is set (absolute URL), appends "|hostname" for external-host checks.
+ */
+export function httpTargetId(
+  method: string,
+  urlPath: string,
+  host?: string | null,
+): string {
+  const base = `http:${method.toUpperCase()} ${urlPath}`;
+  return host ? `${base}|${host.toLowerCase()}` : base;
+}
+
+/** Parse optional host suffix from an http target id. */
+export function parseHttpTargetHost(id: string): string | null {
+  const pipeIdx = id.indexOf("|");
+  if (pipeIdx === -1) return null;
+  return id.slice(pipeIdx + 1).trim().toLowerCase() || null;
 }

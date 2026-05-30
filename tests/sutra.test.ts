@@ -25,6 +25,7 @@ const BROKEN = path.resolve(__dirname, "fixtures/broken");
 const CLEAN = path.resolve(__dirname, "fixtures/clean");
 const PROXIED = path.resolve(__dirname, "fixtures/proxied");
 const ASSETS = path.resolve(__dirname, "fixtures/assets");
+const EXTERNAL = path.resolve(__dirname, "fixtures/external");
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 function sortedIds(nodes: SutraNode[]): string[] {
@@ -371,5 +372,39 @@ describe("runChecks — broken fixture regression: orphan still detected without
       orphan,
       "REGRESSION: POST /api/capture should still be flagged as orphaned_endpoint in broken fixture (no next.config)"
     ).toBeDefined();
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 10. EXTERNAL-HOST ALLOWLIST — external fixture: zero orphaned_endpoint
+// ═════════════════════════════════════════════════════════════════════════════
+describe("runChecks — external fixture (external-host allowlist)", () => {
+  it("emits an http edge with api.telegram.org host suffix", () => {
+    const { edges } = scan(EXTERNAL);
+    const httpEdges = edges.filter((e: SutraEdge) => e.kind === "http");
+    const telegramEdge = httpEdges.find((e) => e.to.includes("api.telegram.org"));
+    expect(
+      telegramEdge,
+      "expected http edge with api.telegram.org host for Telegram fetch"
+    ).toBeDefined();
+  });
+
+  it("emits EXTERNAL registry nodes for known external hosts", () => {
+    const { nodes } = scan(EXTERNAL);
+    const externalNodes = nodes.filter(
+      (n: SutraNode) => n.type === "route" && n.name.startsWith("EXTERNAL ")
+    );
+    expect(externalNodes.length).toBeGreaterThan(0);
+    expect(externalNodes.some((n) => n.name.includes("api.telegram.org"))).toBe(true);
+  });
+
+  it("returns ZERO orphaned_endpoint issues for Telegram external fetch", () => {
+    const { nodes, edges } = scan(EXTERNAL);
+    const issues = runChecks(nodes, edges);
+    const orphans = issues.filter((i) => i.kind === "orphaned_endpoint");
+    expect(
+      orphans,
+      `Expected 0 orphaned_endpoint but got ${orphans.length}: ${orphans.map((o) => o.node).join(", ")}`
+    ).toHaveLength(0);
   });
 });

@@ -10,6 +10,7 @@ import {
   type NodeType,
 } from "./types.js";
 import { makeNodeId, relPosix, httpTargetId } from "./util/ids.js";
+import { loadExternalHosts } from "./external-hosts.js";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -449,8 +450,8 @@ export function scan(repoRoot: string): { nodes: SutraNode[]; edges: SutraEdge[]
             args.length >= 1
           ) {
             const urlArg = args[0];
-            const urlPath = extractUrlLiteral(urlArg);
-            if (urlPath !== null) {
+            const urlParts = extractUrlParts(urlArg);
+            if (urlParts !== null) {
               let method = "GET";
               if (args.length >= 2 && Node.isObjectLiteralExpression(args[1])) {
                 const methodProp = args[1]
@@ -469,7 +470,7 @@ export function scan(repoRoot: string): { nodes: SutraNode[]; edges: SutraEdge[]
               }
               edges.push({
                 from: enclosingId,
-                to: httpTargetId(method, urlPath),
+                to: httpTargetId(method, urlParts.path, urlParts.host),
                 kind: "http",
               });
             }
@@ -485,12 +486,12 @@ export function scan(repoRoot: string): { nodes: SutraNode[]; edges: SutraEdge[]
               ["get", "post", "put", "patch", "delete", "request"].includes(meth)
             ) {
               const urlArg = args[0];
-              const urlPath = urlArg ? extractUrlLiteral(urlArg) : null;
-              if (urlPath !== null) {
+              const urlParts = urlArg ? extractUrlParts(urlArg) : null;
+              if (urlParts !== null) {
                 const method = meth === "request" ? "GET" : meth.toUpperCase();
                 edges.push({
                   from: enclosingId,
-                  to: httpTargetId(method, urlPath),
+                  to: httpTargetId(method, urlParts.path, urlParts.host),
                   kind: "http",
                 });
               }
@@ -505,7 +506,7 @@ export function scan(repoRoot: string): { nodes: SutraNode[]; edges: SutraEdge[]
             Node.isObjectLiteralExpression(args[0])
           ) {
             const obj = args[0];
-            let urlPath: string | null = null;
+            let urlParts: { path: string; host: string | null } | null = null;
             let method = "GET";
 
             for (const prop of obj.getProperties()) {
@@ -513,15 +514,15 @@ export function scan(repoRoot: string): { nodes: SutraNode[]; edges: SutraEdge[]
               const pname = prop.getName();
               const val = prop.getInitializer();
               if (!val) continue;
-              if (pname === "url") urlPath = extractUrlLiteral(val);
+              if (pname === "url") urlParts = extractUrlParts(val);
               if (pname === "method" && Node.isStringLiteral(val)) {
                 method = val.getLiteralValue().toUpperCase();
               }
             }
-            if (urlPath !== null) {
+            if (urlParts !== null) {
               edges.push({
                 from: enclosingId,
-                to: httpTargetId(method, urlPath),
+                to: httpTargetId(method, urlParts.path, urlParts.host),
                 kind: "http",
               });
             }
@@ -561,6 +562,7 @@ export function scan(repoRoot: string): { nodes: SutraNode[]; edges: SutraEdge[]
 
   // ── Pass 3: detect proxy/rewrite config and emit PROXY nodes ─────────────
   detectProxyNodes(absRoot, nodes);
+  detectExternalHostNodes(absRoot, nodes);
 
   return { nodes, edges };
 }
@@ -673,23 +675,52 @@ function detectProxyNodes(absRoot: string, nodes: SutraNode[]): void {
   }
 }
 
+/**
+ * Emit EXTERNAL nodes for known external API hosts (defaults + optional repo config).
+ */
+function detectExternalHostNodes(absRoot: string, nodes: SutraNode[]): void {
+  for (const host of loadExternalHosts(absRoot)) {
+    const label = `EXTERNAL ${host}`;
+    const nodeId = makeNodeId("external-hosts", label);
+    if (nodes.find((n) => n.id === nodeId)) continue;
+    nodes.push({
+      id: nodeId,
+      type: "route",
+      name: label,
+      file: "external-hosts",
+      line: 1,
+      data_shape: label,
+      feature: "external",
+    });
+  }
+}
+
 // ── URL literal extractor ─────────────────────────────────────────────────────
-// Returns the literal path portion, or null if fully dynamic / not a literal.
-function extractUrlLiteral(node: Node): string | null {
+// Returns path + optional host for absolute URLs. Local paths have host null.
+function extractUrlParts(node: Node): { path: string; host: string | null } | null {
   if (Node.isStringLiteral(node)) {
-    return node.getLiteralValue();
+    const val = node.getLiteralValue();
+    if (val.startsWith("http://") || val.startsWith("https://")) {
+      try {
+        const u = new URL(val);
+        return { path: u.pathname || "/", host: u.hostname.toLowerCase() };
+      } catch {
+        return null;
+      }
+    }
+    if (val.startsWith("/")) return { path: val, host: null };
+    return null;
   }
   // Template literal: keep only the head (static prefix)
   if (Node.isTemplateExpression(node)) {
     const head = node.getHead().getLiteralText();
-    if (head && head.startsWith("/")) return head;
+    if (head && head.startsWith("/")) return { path: head, host: null };
     if (head && head.startsWith("http")) {
-      // Extract path portion
       try {
         const u = new URL(head);
-        return u.pathname;
+        return { path: u.pathname || "/", host: u.hostname.toLowerCase() };
       } catch {
-        return head;
+        return null;
       }
     }
     return null;
@@ -697,7 +728,15 @@ function extractUrlLiteral(node: Node): string | null {
   // No-sub template literal
   if (node.getKind() === SyntaxKind.NoSubstitutionTemplateLiteral) {
     const text = node.getText().slice(1, -1); // strip backticks
-    if (text.startsWith("/")) return text;
+    if (text.startsWith("/")) return { path: text, host: null };
+    if (text.startsWith("http://") || text.startsWith("https://")) {
+      try {
+        const u = new URL(text);
+        return { path: u.pathname || "/", host: u.hostname.toLowerCase() };
+      } catch {
+        return null;
+      }
+    }
     return null;
   }
   return null;

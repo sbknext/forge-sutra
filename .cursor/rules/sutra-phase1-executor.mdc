@@ -1,0 +1,37 @@
+---
+description: Sutra Phase 1 executor — one story at a time, hard gates, claim bounds
+globs: "**/*"
+alwaysApply: false
+---
+
+# Sutra Phase 1 — Executor Rules
+
+Read first (in order): `BRIEF.md`, `NOTES.md`, `FIXES.md`, `README.md`, `_bmad/sutra-phase1/PLAN.md`.
+
+## Workflow (immutable)
+
+- Plan-by-plan. **STEP 0:** author/approve `PLAN.md` before any code.
+- **One story at a time.** After each story: TDD (failing fixture/test first) → minimal impl → gate → **STOP** for owner `"next"`.
+- **Do NOT bulk-implement.** Do NOT skip the gate between stories.
+- One story = one commit (≤5 files / ≤300 lines where possible). Conventional commit message.
+- Gate every story: `npm run build` && `npm test` — both green. Report test counts + new test names.
+- Regression guard: `broken` fixture `POST /api/capture` orphan still flagged; `proxied`/`assets`/`clean` fixtures unchanged.
+
+## Hard constraints
+
+- Standalone, single-user. **No** auth, user_id, multi-user, brain-api, or Brain DB.
+- Local-first: read repo → write `.sutra/` → serve/open locally.
+- TS/JS only (`.ts/.tsx/.js/.jsx`). **AST via ts-morph — never regex to understand code.**
+- Node IDs: stable + deterministic (`relPath#symbol`). `graph.json` is the contract; bump `GRAPH_VERSION` on breaking schema changes.
+- Every new check: **broken fixture proves it fires** + **clean fixture proves silence** (no over-suppression).
+
+## Claim bounds (code, comments, view, README)
+
+- Structural/contract findings **only** — NOT logic bugs, runtime, or security.
+- Results are **candidate**, never **complete**.
+- No "auto-debug", "finds all bugs", or "auto-generates tests" language.
+- If a story can't be done within bounds: **stop and surface** — do not silently work around.
+
+## Phase end
+
+Update `NOTES.md` (Phase 1 findings), `README.md` (commands + claim bounds), bump graph version if schema changed.

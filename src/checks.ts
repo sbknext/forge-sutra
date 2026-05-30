@@ -91,13 +91,22 @@ function parseEndpointDef(node: SutraNode): { method: string; path: string } | n
 }
 
 /**
- * Parse "METHOD /path" out of an httpTargetId ("http:METHOD /path").
+ * Parse "METHOD /path" out of an httpTargetId ("http:METHOD /path" or "http:METHOD /path|host").
  */
-function parseHttpTargetId(id: string): { method: string; path: string } | null {
-  const body = id.slice("http:".length).trim(); // "METHOD /path"
-  const m = body.match(/^([A-Z]+)\s+(\/[^\s]*)$/i);
+function parseHttpTargetId(
+  id: string,
+): { method: string; path: string; host: string | null } | null {
+  const body = id.slice("http:".length).trim();
+  let host: string | null = null;
+  let methodPath = body;
+  const pipeIdx = body.indexOf("|");
+  if (pipeIdx !== -1) {
+    methodPath = body.slice(0, pipeIdx).trim();
+    host = body.slice(pipeIdx + 1).trim().toLowerCase() || null;
+  }
+  const m = methodPath.match(/^([A-Z]+)\s+(\/[^\s]*)$/i);
   if (!m) return null;
-  return { method: m[1]!.toUpperCase(), path: m[2]! };
+  return { method: m[1]!.toUpperCase(), path: m[2]!, host };
 }
 
 // ---------------------------------------------------------------------------
@@ -135,6 +144,23 @@ function isCoveredByProxy(urlPath: string, proxyPrefixes: string[]): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// External host helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Collect external hostnames from nodes emitted by scanner's detectExternalHostNodes().
+ */
+function collectExternalHosts(nodes: SutraNode[]): string[] {
+  const hosts: string[] = [];
+  for (const n of nodes) {
+    if (n.type === "route" && n.name.startsWith("EXTERNAL ")) {
+      hosts.push(n.name.slice("EXTERNAL ".length).toLowerCase());
+    }
+  }
+  return hosts;
+}
+
+// ---------------------------------------------------------------------------
 // Check 1 — orphaned_endpoint
 // ---------------------------------------------------------------------------
 /**
@@ -158,6 +184,7 @@ function checkOrphanedEndpoints(
 
   // Collect proxy prefixes so proxied calls are not flagged.
   const proxyPrefixes = collectProxyPrefixes(nodes);
+  const externalHosts = new Set(collectExternalHosts(nodes));
 
   const seen = new Set<string>();
   const issues: SutraIssue[] = [];
@@ -175,6 +202,9 @@ function checkOrphanedEndpoints(
 
     // Skip paths that are intentionally proxied out of the repo.
     if (isCoveredByProxy(path, proxyPrefixes)) continue;
+
+    // Skip fetches to known external API hosts (Telegram, Stripe, etc.).
+    if (target.host && externalHosts.has(target.host)) continue;
 
     const matched = endpointDefs.some(
       (def) =>

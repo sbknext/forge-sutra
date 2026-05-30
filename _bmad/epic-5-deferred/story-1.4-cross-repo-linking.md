@@ -1,3 +1,5 @@
+> ⛔ **DEFERRED — DO NOT IMPLEMENT.** Out of scope (breaks single-repo / standalone / local-first). See [Epic 5 README](README.md). Build this only on an explicit owner decision.
+
 # Story 1.4: Cross-repo linking
 
 - **Epic:** Epic 1 — Truthful Graph

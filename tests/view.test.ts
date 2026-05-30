@@ -8,10 +8,15 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { renderView } from "../src/view.js";
 import { diffGraphs, loadGraphFile } from "../src/diff.js";
-import type { SutraGraph } from "../src/types.js";
+import { scan } from "../src/scanner.js";
+import { loadContracts } from "../src/contracts.js";
+import { checkContractDrift, runChecks } from "../src/checks.js";
+import { buildFeatures } from "../src/features.js";
+import { GRAPH_VERSION, type SutraGraph } from "../src/types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = path.resolve(__dirname, "fixtures/diff");
+const CONTRACT_DECLARED = path.resolve(__dirname, "fixtures/contract-declared");
 const GRAPH_A = path.join(FIXTURE_DIR, "graph-a.json");
 const GRAPH_B = path.join(FIXTURE_DIR, "graph-b.json");
 
@@ -58,6 +63,46 @@ describe("renderView — diff panel (SUTRA-3.2)", () => {
     const emptyDiff = diffGraphs(graph, graph);
     const html = renderView(graph, emptyDiff);
     expect(html).not.toContain("Changes since last scan");
+  });
+});
+
+function buildGraphFromFixture(repoRoot: string): SutraGraph {
+  const { nodes, edges } = scan(repoRoot);
+  const checkIssues = runChecks(nodes, edges);
+  const { contracts, issues: contractIssues } = loadContracts(repoRoot);
+  const driftIssues = checkContractDrift(contracts, nodes);
+  const issues = [...checkIssues, ...contractIssues, ...driftIssues];
+  return {
+    version: GRAPH_VERSION,
+    repo: "test",
+    scanned_at: new Date().toISOString(),
+    commit: "test",
+    nodes,
+    edges,
+    issues,
+    features: buildFeatures(nodes, issues),
+    contracts,
+  };
+}
+
+describe("renderView — contract drift panel (SUTRA-11.1)", () => {
+  it("shows contract drift panel when contracts and drift issues exist", () => {
+    const graph = buildGraphFromFixture(CONTRACT_DECLARED);
+    expect(graph.contracts.length).toBeGreaterThan(0);
+    expect(graph.issues.some((i) => i.kind.startsWith("contract_"))).toBe(true);
+
+    const html = renderView(graph);
+    expect(html).toContain("Contract drift");
+    expect(html).toContain("contract-drift-panel");
+    expect(html).toContain("heuristic");
+    expect(html).toContain("feature.sutra.md");
+  });
+
+  it("omits contract drift panel when no contracts", () => {
+    const graph = readGraph(GRAPH_B);
+    const html = renderView(graph);
+    expect(html).not.toContain("Contract drift");
+    expect(html).not.toMatch(/<section class="contract-drift-panel"/);
   });
 });
 

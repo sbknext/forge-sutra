@@ -110,6 +110,42 @@ function diffHasChanges(diff: SutraDiff): boolean {
   );
 }
 
+/** Build contract drift panel — display-only, heuristic. */
+function buildContractDriftPanel(graph: SutraGraph): string {
+  if (graph.contracts.length === 0) return "";
+
+  const driftIssues = graph.issues.filter((i) => i.kind.startsWith("contract_"));
+  if (driftIssues.length === 0) return "";
+
+  const byFeature = new Map<string, SutraIssue[]>();
+  for (const iss of driftIssues) {
+    if (!byFeature.has(iss.feature)) byFeature.set(iss.feature, []);
+    byFeature.get(iss.feature)!.push(iss);
+  }
+
+  const groups = [...byFeature.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([feature, issues]) => {
+      const contract = graph.contracts.find((c) => c.feature === feature);
+      const source = contract?.file ?? "unknown";
+      const rows = issues
+        .map(
+          (iss) =>
+            `<li class="issue issue-${esc(iss.severity)}"><span class="sev">${esc(iss.severity.toUpperCase())}</span> ${esc(iss.message)}</li>`,
+        )
+        .join("\n");
+      return `<div class="drift-group"><strong>${esc(feature)}</strong> <span class="source">(${esc(source)})</span><ul class="issue-list">${rows}</ul></div>`;
+    })
+    .join("\n");
+
+  return `
+<section class="contract-drift-panel">
+  <h2>Contract drift</h2>
+  <p class="drift-meta">Declared vs observed routes &mdash; heuristic / candidate.</p>
+  ${groups}
+</section>`;
+}
+
 /** Build "Changes since last scan" panel — display-only, heuristic. */
 function buildDiffPanel(diff: SutraDiff): string {
   if (!diffHasChanges(diff)) return "";
@@ -218,6 +254,7 @@ export function renderView(graph: SutraGraph, diff?: SutraDiff): string {
 
   const graphJson = JSON.stringify(graph);
   const diffPanel = diff ? buildDiffPanel(diff) : "";
+  const contractDriftPanel = buildContractDriftPanel(graph);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -266,6 +303,11 @@ header .counts span { background: #334155; padding: 0.15rem 0.6rem; border-radiu
 .diff-group li { padding: 0.15rem 0; color: #334155; }
 .diff-group li.more { color: #64748b; font-style: italic; }
 .diff-group code { font-size: 0.78rem; background: #f1f5f9; padding: 0.1rem 0.35rem; border-radius: 3px; }
+.contract-drift-panel { background: #fff; border: 1px solid #cbd5e1; border-left: 4px solid #f59e0b; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.25rem; }
+.contract-drift-panel h2 { font-size: 1rem; font-weight: 700; margin-bottom: 0.35rem; }
+.drift-meta { font-size: 0.8rem; color: #64748b; margin-bottom: 0.75rem; }
+.drift-group { margin-bottom: 0.75rem; font-size: 0.82rem; }
+.drift-group .source { color: #64748b; font-weight: 400; font-size: 0.78rem; }
 </style>
 </head>
 <body>
@@ -288,6 +330,8 @@ header .counts span { background: #334155; padding: 0.15rem 0.6rem; border-radiu
 </div>
 
 ${diffPanel}
+
+${contractDriftPanel}
 
 <div class="grid" id="feature-grid">
 ${cards}

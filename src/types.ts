@@ -23,7 +23,8 @@ export type IssueKind =
   | "contract_parse_error"
   | "contract_missing_route"
   | "contract_undeclared_route"
-  | "cross_repo_orphan";
+  | "cross_repo_orphan"
+  | "hook_failure";
 
 export interface SutraNode {
   /** Stable deterministic id: `relative/path#symbol`. */

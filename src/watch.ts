@@ -9,6 +9,7 @@ import { scan, collectFiles } from "./scanner.js";
 import { runChecks, checkContractDrift } from "./checks.js";
 import { buildFeatures } from "./features.js";
 import { loadContracts } from "./contracts.js";
+import { runPostScanHooks } from "./hooks.js";
 import { diffGraphs, formatDiffSummary } from "./diff.js";
 import {
   GRAPH_VERSION,
@@ -86,8 +87,7 @@ export function runScanPipeline(
   const checkIssues = runChecks(nodes, edges);
   const { contracts, issues: contractIssues } = loadContracts(repoRoot);
   const driftIssues = checkContractDrift(contracts, nodes);
-  const issues = [...checkIssues, ...contractIssues, ...driftIssues];
-  const features = buildFeatures(nodes, issues);
+  let issues = [...checkIssues, ...contractIssues, ...driftIssues];
   timings.checksMs = performance.now() - checksStart;
 
   const graph: SutraGraph = {
@@ -97,14 +97,21 @@ export function runScanPipeline(
     commit,
     nodes,
     edges,
-    issues,
-    features,
+    issues: [],
+    features: [],
     contracts,
   };
 
   const writeStart = performance.now();
   fs.mkdirSync(outDir, { recursive: true });
-  fs.writeFileSync(graphPath, JSON.stringify(graph, null, 2), "utf8");
+
+  const graphPathForHooks = path.join(outDir, GRAPH_FILE);
+  const hookIssues = runPostScanHooks(repoRoot, graphPathForHooks);
+  issues = [...issues, ...hookIssues];
+  graph.issues = issues;
+  graph.features = buildFeatures(nodes, issues);
+
+  fs.writeFileSync(graphPathForHooks, JSON.stringify(graph, null, 2), "utf8");
   timings.writeMs = performance.now() - writeStart;
 
   let diffSummary: string | undefined;
@@ -120,7 +127,7 @@ export function runScanPipeline(
     options.onProfile?.(timings);
   }
 
-  return { graph, graphPath, diffSummary, profile: options?.profile ? timings : undefined };
+  return { graph, graphPath: graphPathForHooks, diffSummary, profile: options?.profile ? timings : undefined };
 }
 
 /** Collect watchable source files under repoRoot. */

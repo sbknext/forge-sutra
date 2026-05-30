@@ -22,6 +22,7 @@ import {
 import { diffGraphs, formatDiffSummary, loadGraphFile, type SutraDiff } from "./diff.js";
 import { writeScaffolds, SCAFFOLD_KINDS } from "./scaffold.js";
 import { runScanPipeline, startWatch } from "./watch.js";
+import { reconcileGraphs } from "./reconcile.js";
 import type { IssueKind } from "./types.js";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -188,6 +189,38 @@ function cmdDiff(
   }
 }
 
+// ── reconcile command ─────────────────────────────────────────────────────────
+
+function cmdReconcile(opts: { client: string; server: string }): void {
+  let clientGraph: SutraGraph;
+  let serverGraph: SutraGraph;
+  try {
+    clientGraph = loadGraphFile(path.resolve(opts.client));
+    serverGraph = loadGraphFile(path.resolve(opts.server));
+  } catch (err) {
+    console.error(chalk.red(`\nError: ${String(err)}\n`));
+    process.exit(1);
+  }
+
+  const result = reconcileGraphs(clientGraph, serverGraph);
+
+  console.log(chalk.bold(`\nSutra reconcile — candidate cross-repo match\n`));
+  console.log(`  Client: ${chalk.cyan(clientGraph.repo)} (${opts.client})`);
+  console.log(`  Server: ${chalk.cyan(serverGraph.repo)} (${opts.server})`);
+  console.log(`  Checked: ${result.checked} calls · Matched: ${result.matched}`);
+  console.log(chalk.gray("  Static match only — ignores auth, env URLs, proxy rewrites.\n"));
+
+  if (result.issues.length === 0) {
+    console.log(chalk.green("  No cross-repo orphans found (heuristic)."));
+  } else {
+    console.log(chalk.bold(`  cross_repo_orphan (${result.issues.length}) — candidate:`));
+    for (const iss of result.issues) {
+      console.log(`    · ${iss.node}: ${iss.message}`);
+    }
+  }
+  console.log();
+}
+
 // ── scaffold command ──────────────────────────────────────────────────────────
 
 function parseScaffoldKinds(fromIssues?: string): IssueKind[] {
@@ -349,6 +382,18 @@ program
       cmdDiff(pathA, pathB, opts);
     },
   );
+
+program
+  .command("reconcile")
+  .description(
+    "Match client graph HTTP calls against server graph routes. " +
+    "Cross-repo static match — candidate results for human review.",
+  )
+  .requiredOption("--client <graph>", "Path to client graph.json")
+  .requiredOption("--server <graph>", "Path to server graph.json")
+  .action((opts: { client: string; server: string }) => {
+    cmdReconcile(opts);
+  });
 
 program
   .command("scaffold")

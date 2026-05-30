@@ -194,6 +194,7 @@ export interface SutraGraph {
 
 export const SUTRA_DIR = ".sutra";
 export const GRAPH_FILE = "graph.json";
+export const BASELINE_FILE = "baseline.json";
 export const GRAPH_PREV_FILE = "graph.prev.json";
 export const DIFF_FILE = "diff.json";
 export const VIEW_FILE = "view.html";

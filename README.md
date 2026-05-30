@@ -56,6 +56,31 @@ Options:
 - `--watch` — debounced re-scan on TS/JS file changes (CLI-only; for live viewer use `watch` command). Snapshots previous graph to `.sutra/graph.prev.json`, writes `.sutra/diff.json`, prints delta summary. Ctrl+C to stop. Static scan only — not a runtime monitor.
 - `--profile` — print phase timings (walk, parse, checks, write) to stderr. Candidate timings only — environment-dependent, not an SLA.
 - `--ai` — opt-in LLM feature naming (`ai_name` / `ai_summary` on features). Requires `SUTRA_AI_API_KEY`. Offline/no-key scans fall back to heuristic labels.
+- `--check` — compare scan to baseline graph; exit **1** if new error-severity issues vs baseline (drift gate, not absolute state). Exit **2** if baseline missing or graph version mismatch.
+- `--baseline <path>` — baseline for `--check` (default: `.sutra/baseline.json`).
+- `--fail-on <severity>` — gate threshold: `error` (default), `warn`, or `info`.
+- `--format json` — machine-readable gate output (with `--check`).
+- `--pr-comment [path]` — Markdown PR comment body for `--check` (stdout or file).
+
+### `forge-sutra baseline [repoPath]`
+
+Runs a full scan and writes `.sutra/baseline.json` for CI gating. Commit this file to pin acceptable structural state.
+
+```
+forge-sutra baseline
+forge-sutra scan --check    # fails only on new issues vs baseline
+```
+
+**GitHub Actions (canonical):**
+
+```yaml
+- run: npm ci && npm run build
+- run: npx forge-sutra baseline ./your-repo   # once, commit .sutra/baseline.json
+- run: npx forge-sutra scan ./your-repo --check
+  # exit 1 = new structural regression · exit 2 = missing/incompatible baseline
+```
+
+Exit codes for `--check`: **0** pass · **1** new issues at `--fail-on` threshold · **2** configuration error (no baseline or version skew).
 
 What it does:
 1. Walks the repo (skips `node_modules`, `dist`, `.next`, `.git`, `coverage`, `out`).

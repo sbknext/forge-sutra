@@ -21,6 +21,15 @@
 
 <div class="toolbar">
   <button type="button" id="btn-reload">Reload graph</button>
+  <label>Sort
+    <select id="sort-key">
+      <option value="health" selected>Health (worst first)</option>
+      <option value="health-best">Health (best first)</option>
+      <option value="issues">Issue count</option>
+      <option value="name">Name A–Z</option>
+    </select>
+  </label>
+  <span id="health-filter" class="health-filter"></span>
   <span id="live-status" class="meta"></span>
 </div>
 

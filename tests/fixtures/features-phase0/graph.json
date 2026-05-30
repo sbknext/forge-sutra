@@ -1,0 +1,18 @@
+{
+  "version": 5,
+  "repo": "features-phase0",
+  "scanned_at": "2026-05-30T12:00:00.000Z",
+  "commit": "phase0",
+  "nodes": [
+    { "id": "a.ts", "type": "module", "name": "a.ts", "file": "a.ts", "line": 1, "data_shape": null, "feature": "alpha" },
+    { "id": "b.ts", "type": "module", "name": "b.ts", "file": "b.ts", "line": 1, "data_shape": null, "feature": "beta" }
+  ],
+  "edges": [],
+  "issues": [],
+  "features": [
+    { "id": "alpha", "label": "Alpha Feature", "node_ids": ["a.ts"], "issue_count": 0, "test_edge_count": 0, "test_node_ids": [], "tested": false },
+    { "id": "beta", "label": "Beta Feature", "node_ids": ["b.ts"], "issue_count": 2, "test_edge_count": 0, "test_node_ids": [], "tested": false }
+  ],
+  "contracts": [],
+  "flows": []
+}

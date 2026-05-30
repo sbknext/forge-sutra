@@ -9,8 +9,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   GRAPH_VERSION,
+  LINK_VERSION,
   SUTRA_DIR,
   GRAPH_FILE,
+  LINK_FILE,
+  type LinkResult,
 } from "../types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -41,6 +44,88 @@ export interface ViewerServerOptions {
   port?: number;
   /** Enable SSE /events endpoint (Story 3.5). */
   sse?: boolean;
+}
+
+function readLinkFresh(cwd: string): { status: number; body: string; headers: Record<string, string> } {
+  const linkPath = path.join(cwd, SUTRA_DIR, LINK_FILE);
+  if (!fs.existsSync(linkPath)) {
+    return {
+      status: 404,
+      body: JSON.stringify({ error: "link.json not found — run `sutra link` first" }),
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    };
+  }
+  try {
+    const raw = fs.readFileSync(linkPath, "utf8");
+    JSON.parse(raw);
+    return {
+      status: 200,
+      body: raw,
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    };
+  } catch {
+    return {
+      status: 500,
+      body: JSON.stringify({ error: "link.json is unparseable" }),
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    };
+  }
+}
+
+function readRepoGraph(cwd: string, repoPathEnc: string): { status: number; body: string; headers: Record<string, string> } {
+  const linkPath = path.join(cwd, SUTRA_DIR, LINK_FILE);
+  if (!fs.existsSync(linkPath)) {
+    return {
+      status: 404,
+      body: JSON.stringify({ error: "link.json not found" }),
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    };
+  }
+
+  let link: LinkResult;
+  try {
+    link = JSON.parse(fs.readFileSync(linkPath, "utf8")) as LinkResult;
+  } catch {
+    return {
+      status: 500,
+      body: JSON.stringify({ error: "link.json is unparseable" }),
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    };
+  }
+
+  const requested = decodeURIComponent(repoPathEnc);
+  if (requested.includes("..")) {
+    return {
+      status: 400,
+      body: JSON.stringify({ error: "invalid path" }),
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    };
+  }
+
+  const allowed = new Set(link.repos.map((r) => path.resolve(r.path)));
+  const resolved = path.resolve(requested);
+  if (!allowed.has(resolved)) {
+    return {
+      status: 404,
+      body: JSON.stringify({ error: "repo not in link.json allowlist" }),
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    };
+  }
+
+  const graphPath = path.join(resolved, SUTRA_DIR, GRAPH_FILE);
+  if (!fs.existsSync(graphPath)) {
+    return {
+      status: 404,
+      body: JSON.stringify({ error: "graph.json not found for repo" }),
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    };
+  }
+
+  return {
+    status: 200,
+    body: fs.readFileSync(graphPath, "utf8"),
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+  };
 }
 
 function readGraphFresh(cwd: string): { status: number; body: string; headers: Record<string, string> } {
@@ -95,12 +180,32 @@ export function startViewerServer(
         return;
       }
 
+      if (req.method === "GET" && url.pathname === "/link.json") {
+        const result = readLinkFresh(cwd);
+        res.writeHead(result.status, result.headers);
+        res.end(result.body);
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/repo-graph") {
+        const repoPath = url.searchParams.get("path");
+        if (!repoPath) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "path query required" }));
+          return;
+        }
+        const result = readRepoGraph(cwd, repoPath);
+        res.writeHead(result.status, result.headers);
+        res.end(result.body);
+        return;
+      }
+
       if (req.method === "GET" && url.pathname === "/meta") {
         res.writeHead(200, {
           "Content-Type": "application/json",
           "Cache-Control": "no-store",
         });
-        res.end(JSON.stringify({ graphVersion: GRAPH_VERSION }));
+        res.end(JSON.stringify({ graphVersion: GRAPH_VERSION, linkVersion: LINK_VERSION }));
         return;
       }
 

@@ -38,3 +38,15 @@ export function parseHttpTargetHost(id: string): string | null {
   if (pipeIdx === -1) return null;
   return id.slice(pipeIdx + 1).trim().toLowerCase() || null;
 }
+
+/** Cross-repo namespaced id: `<repo>::<nodeId>`. */
+export function makeCrossRepoId(repo: string, nodeId: string): string {
+  return `${repo}::${nodeId}`;
+}
+
+/** Split a cross-repo id into [repo, nodeId]. */
+export function splitCrossRepoId(id: string): [string, string] {
+  const idx = id.indexOf("::");
+  if (idx === -1) return ["", id];
+  return [id.slice(0, idx), id.slice(idx + 2)];
+}

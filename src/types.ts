@@ -196,6 +196,33 @@ export const GRAPH_PREV_FILE = "graph.prev.json";
 export const DIFF_FILE = "diff.json";
 export const VIEW_FILE = "view.html";
 export const RECONCILE_FILE = "reconcile.json";
+export const LINK_FILE = "link.json";
+
+export const LINK_VERSION = 0;
+
+export type LinkResolution = "confirmed" | "broken" | "unresolved";
+
+export interface LinkRepo {
+  name: string;
+  path: string;
+  commit?: string;
+}
+
+export interface LinkedEdge {
+  from: string;
+  to: string;
+  kind: "http";
+  resolution: LinkResolution;
+  method: string;
+  path: string;
+}
+
+export interface LinkResult {
+  version: number;
+  linked_at: string;
+  repos: LinkRepo[];
+  edges: LinkedEdge[];
+}
 
 /** Directories never scanned. */
 export const EXCLUDED_DIRS = new Set([

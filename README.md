@@ -76,6 +76,17 @@ Reads `.sutra/graph.json` written by `scan`. Produces `.sutra/view.html` (a self
 forge-sutra view
 ```
 
+### `forge-sutra viewer`
+
+Starts a local HTTP server (default port **4577**, binds **127.0.0.1** only) serving an interactive SPA that reads `.sutra/graph.json` on each request. Reload the browser tab or click **Reload graph** to pick up a fresh scan — no HTML rebuild required. No auth, no multi-user, localhost-only.
+
+```
+forge-sutra viewer
+forge-sutra viewer --port 4600
+```
+
+The static `forge-sutra view` command remains the offline/no-server fallback.
+
 ### `forge-sutra diff [pathA] [pathB]`
 
 Diff two `graph.json` files. Defaults: `.sutra/graph.json` vs `.sutra/graph.prev.json`.

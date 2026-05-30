@@ -479,6 +479,10 @@
 
   loadGraph();
 
+  if (window.SutraEcosystem) {
+    window.SutraEcosystem.init(window.SUTRA_LINK_VERSION);
+  }
+
   /* Story 3.5 — live push via SSE when /events is available */
   if (typeof EventSource !== "undefined") {
     try {

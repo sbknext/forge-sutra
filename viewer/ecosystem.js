@@ -1,0 +1,119 @@
+/**
+ * Story 3.4 — ecosystem cross-repo map view.
+ */
+(function () {
+  "use strict";
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  function splitCrossRepoId(id) {
+    var idx = id.indexOf("::");
+    if (idx === -1) return ["", id];
+    return [id.slice(0, idx), id.slice(idx + 2)];
+  }
+
+  window.SutraEcosystem = {
+    init: function (linkVersion) {
+      var tab = document.getElementById("tab-ecosystem");
+      if (!tab) return;
+
+      fetch("/link.json", { cache: "no-store" })
+        .then(function (res) {
+          if (!res.ok) {
+            tab.classList.add("disabled");
+            tab.title = "Run `sutra link` to build the ecosystem map";
+            return null;
+          }
+          return res.json();
+        })
+        .then(function (link) {
+          if (!link) return;
+          if (link.version !== linkVersion) {
+            tab.classList.add("disabled");
+            tab.title = "link.json version mismatch — re-run link";
+            return;
+          }
+          tab.classList.remove("disabled");
+          tab.onclick = function () {
+            window.SutraEcosystem.show(link);
+          };
+        });
+    },
+
+    show: function (link) {
+      var root = document.getElementById("view-ecosystem");
+      document.getElementById("view-grid").classList.add("hidden");
+      document.getElementById("view-drilldown").classList.add("hidden");
+      root.classList.remove("hidden");
+
+      var showUnresolved = false;
+
+      function render() {
+        var html =
+          '<div class="ecosystem">' +
+          '<div class="drilldown-header">' +
+          '<button type="button" id="eco-back">← Back to features</button>' +
+          "<h2>Ecosystem map</h2>" +
+          '<label><input type="checkbox" id="eco-unresolved"> Show unresolved links</label>' +
+          "</div>";
+
+        link.repos.forEach(function (repo) {
+          html +=
+            '<div class="eco-cluster"><h3>' +
+            esc(repo.name) +
+            (repo.commit ? " <span class='meta'>@" + esc(repo.commit) + "</span>" : "") +
+            "</h3><p class='meta'>Cross-repo endpoints only — heuristic / candidate</p></div>";
+        });
+
+        html += '<div class="eco-links"><h3>Cross-repo links</h3><ul>';
+        link.edges
+          .filter(function (e) {
+            return showUnresolved || e.resolution !== "unresolved";
+          })
+          .forEach(function (edge) {
+            var cls =
+              edge.resolution === "confirmed"
+                ? "link-confirmed"
+                : edge.resolution === "broken"
+                  ? "link-broken"
+                  : "link-unresolved";
+            var src = splitCrossRepoId(edge.from)[0];
+            var dst = splitCrossRepoId(edge.to)[0];
+            html +=
+              '<li class="' +
+              cls +
+              '"><strong>' +
+              esc(edge.method) +
+              " " +
+              esc(edge.path) +
+              "</strong> · " +
+              esc(src) +
+              " → " +
+              esc(dst) +
+              " · <span class='badge'>" +
+              esc(edge.resolution) +
+              "</span> · recon: n/a</li>";
+          });
+        html += "</ul></div></div>";
+
+        root.innerHTML = html;
+        document.getElementById("eco-back").onclick = function () {
+          root.classList.add("hidden");
+          document.getElementById("view-grid").classList.remove("hidden");
+        };
+        document.getElementById("eco-unresolved").checked = showUnresolved;
+        document.getElementById("eco-unresolved").onchange = function (ev) {
+          showUnresolved = ev.target.checked;
+          render();
+        };
+      }
+
+      render();
+    },
+  };
+})();

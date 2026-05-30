@@ -25,6 +25,8 @@ import {
   type SutraGraph,
 } from "./types.js";
 import { diffGraphs, formatDiffSummary, loadGraphFile, type SutraDiff } from "./diff.js";
+import { writeScaffolds, SCAFFOLD_KINDS } from "./scaffold.js";
+import type { IssueKind } from "./types.js";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -187,6 +189,65 @@ function cmdDiff(
   }
 }
 
+// ── scaffold command ──────────────────────────────────────────────────────────
+
+function parseScaffoldKinds(fromIssues?: string): IssueKind[] {
+  if (!fromIssues) return [...SCAFFOLD_KINDS];
+  const allowed = new Set<string>(SCAFFOLD_KINDS);
+  const kinds = fromIssues.split(",").map((k) => k.trim());
+  for (const k of kinds) {
+    if (!allowed.has(k)) {
+      console.error(
+        chalk.red(
+          `\nError: unknown issue kind "${k}". Allowed: ${[...allowed].join(", ")}\n`,
+        ),
+      );
+      process.exit(1);
+    }
+  }
+  return kinds as IssueKind[];
+}
+
+function cmdScaffold(opts: { fromIssues?: string; force?: boolean }): void {
+  const cwd = process.cwd();
+  const graphFile = graphFilePath(cwd);
+
+  if (!fs.existsSync(graphFile)) {
+    console.error(
+      chalk.red(
+        `\nError: ${graphFile} not found.\nRun \`sutra scan\` first.\n`,
+      ),
+    );
+    process.exit(1);
+  }
+
+  let graph: SutraGraph;
+  try {
+    graph = JSON.parse(fs.readFileSync(graphFile, "utf8")) as SutraGraph;
+  } catch (err) {
+    console.error(chalk.red(`\nError reading graph.json: ${String(err)}\n`));
+    process.exit(1);
+  }
+
+  const kinds = parseScaffoldKinds(opts.fromIssues);
+  const outDir = path.join(sutraDir(cwd), "scaffold");
+  const result = writeScaffolds(graph, {
+    outDir,
+    kinds,
+    force: opts.force,
+  });
+
+  console.log(chalk.bold("\nSutra scaffold — candidate stubs only, not run in CI\n"));
+  console.log(`  Wrote ${chalk.cyan(String(result.written.length))} file(s)`);
+  for (const f of result.written) {
+    console.log(chalk.gray(`    ${f}`));
+  }
+  if (result.skipped.length > 0) {
+    console.log(`  Skipped ${chalk.yellow(String(result.skipped.length))} existing file(s) (use --force to overwrite)`);
+  }
+  console.log();
+}
+
 // ── view command ──────────────────────────────────────────────────────────────
 
 function cmdView(): void {
@@ -289,5 +350,20 @@ program
       cmdDiff(pathA, pathB, opts);
     },
   );
+
+program
+  .command("scaffold")
+  .description(
+    "Emit candidate test stubs from graph issues into .sutra/scaffold/. " +
+    "Stubs only — may not compile, not run in CI.",
+  )
+  .option(
+    "--from-issues <kinds>",
+    "Comma-separated issue kinds (orphaned_endpoint, contract_missing_route)",
+  )
+  .option("--force", "Overwrite existing scaffold files")
+  .action((opts: { fromIssues?: string; force?: boolean }) => {
+    cmdScaffold(opts);
+  });
 
 program.parse(process.argv);

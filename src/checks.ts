@@ -360,10 +360,10 @@ export function checkContractDrift(
     if (def) routeDefs.push({ ...def, feature: n.feature });
   }
 
-  const declared: Array<{ method: string; path: string; feature: string }> = [];
+  const declared: Array<{ method: string; path: string; feature: string; file: string }> = [];
   for (const c of contracts) {
     for (const ep of c.endpoints) {
-      declared.push({ method: ep.method, path: ep.path, feature: c.feature });
+      declared.push({ method: ep.method, path: ep.path, feature: c.feature, file: c.file });
     }
   }
 
@@ -385,7 +385,7 @@ export function checkContractDrift(
         kind: "contract_missing_route",
         node: `${ep.method} ${ep.path}`,
         feature: ep.feature,
-        message: `Contract declares ${ep.method} ${ep.path} but no route handler defines it.`,
+        message: `Contract in ${ep.file} declares ${ep.method} ${ep.path} but no route handler defines it.`,
       });
     }
   }
@@ -405,7 +405,7 @@ export function checkContractDrift(
         kind: "contract_undeclared_route",
         node: `${def.method} ${def.path}`,
         feature: def.feature,
-        message: `Route ${def.method} ${def.path} exists but is not declared in feature.sutra.md.`,
+        message: `Route ${def.method} ${def.path} exists but is not declared in any contract file.`,
       });
     }
   }

@@ -14,7 +14,7 @@ import { loadExternalHosts } from "./external-hosts.js";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-function collectFiles(root: string): string[] {
+export function collectFiles(root: string): string[] {
   const results: string[] = [];
   function walk(dir: string) {
     let entries: fs.Dirent[];

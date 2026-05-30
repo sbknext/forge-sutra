@@ -54,6 +54,7 @@ sutra scan         # alias — same command
 
 Options:
 - `--watch` — debounced re-scan on TS/JS file changes. Snapshots previous graph to `.sutra/graph.prev.json`, writes `.sutra/diff.json`, prints delta summary. Ctrl+C to stop. Static scan only — not a runtime monitor.
+- `--profile` — print phase timings (walk, parse, checks, write) to stderr. Candidate timings only — environment-dependent, not an SLA.
 
 What it does:
 1. Walks the repo (skips `node_modules`, `dist`, `.next`, `.git`, `coverage`, `out`).

@@ -5,7 +5,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { scan } from "./scanner.js";
+import { scan, collectFiles } from "./scanner.js";
 import { runChecks, checkContractDrift } from "./checks.js";
 import { buildFeatures } from "./features.js";
 import { loadContracts } from "./contracts.js";
@@ -21,10 +21,24 @@ import {
   type SutraGraph,
 } from "./types.js";
 
+export interface ScanTimings {
+  walkMs: number;
+  parseMs: number;
+  checksMs: number;
+  writeMs: number;
+  totalMs: number;
+}
+
+export interface ScanPipelineOptions {
+  profile?: boolean;
+  onProfile?: (timings: ScanTimings) => void;
+}
+
 export interface ScanPipelineResult {
   graph: SutraGraph;
   graphPath: string;
   diffSummary?: string;
+  profile?: ScanTimings;
 }
 
 export interface WatchOptions {
@@ -40,7 +54,11 @@ export function runScanPipeline(
   repoRoot: string,
   cwd: string,
   commit: string,
+  options?: ScanPipelineOptions,
 ): ScanPipelineResult {
+  const totalStart = performance.now();
+  const timings: ScanTimings = { walkMs: 0, parseMs: 0, checksMs: 0, writeMs: 0, totalMs: 0 };
+
   const outDir = path.join(cwd, SUTRA_DIR);
   const graphPath = path.join(outDir, GRAPH_FILE);
   const prevPath = path.join(outDir, GRAPH_PREV_FILE);
@@ -56,12 +74,21 @@ export function runScanPipeline(
     }
   }
 
+  const walkStart = performance.now();
+  collectFiles(repoRoot);
+  timings.walkMs = performance.now() - walkStart;
+
+  const parseStart = performance.now();
   const { nodes, edges } = scan(repoRoot);
+  timings.parseMs = performance.now() - parseStart;
+
+  const checksStart = performance.now();
   const checkIssues = runChecks(nodes, edges);
   const { contracts, issues: contractIssues } = loadContracts(repoRoot);
   const driftIssues = checkContractDrift(contracts, nodes);
   const issues = [...checkIssues, ...contractIssues, ...driftIssues];
   const features = buildFeatures(nodes, issues);
+  timings.checksMs = performance.now() - checksStart;
 
   const graph: SutraGraph = {
     version: GRAPH_VERSION,
@@ -75,8 +102,10 @@ export function runScanPipeline(
     contracts,
   };
 
+  const writeStart = performance.now();
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(graphPath, JSON.stringify(graph, null, 2), "utf8");
+  timings.writeMs = performance.now() - writeStart;
 
   let diffSummary: string | undefined;
   if (prevGraph) {
@@ -85,7 +114,13 @@ export function runScanPipeline(
     diffSummary = formatDiffSummary(diff);
   }
 
-  return { graph, graphPath, diffSummary };
+  timings.totalMs = performance.now() - totalStart;
+
+  if (options?.profile) {
+    options.onProfile?.(timings);
+  }
+
+  return { graph, graphPath, diffSummary, profile: options?.profile ? timings : undefined };
 }
 
 /** Collect watchable source files under repoRoot. */

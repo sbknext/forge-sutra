@@ -21,7 +21,7 @@ import {
 } from "./types.js";
 import { diffGraphs, formatDiffSummary, loadGraphFile, type SutraDiff } from "./diff.js";
 import { writeScaffolds, SCAFFOLD_KINDS } from "./scaffold.js";
-import { runScanPipeline, startWatch } from "./watch.js";
+import { runScanPipeline, startWatch, type ScanTimings } from "./watch.js";
 import { reconcileGraphs } from "./reconcile.js";
 import { migrateFile } from "./migrate.js";
 import type { IssueKind } from "./types.js";
@@ -108,7 +108,19 @@ function printScanSummary(graph: SutraGraph, outFile: string): void {
   console.log(chalk.gray("  Run `node dist/cli.js view` to open the HTML view.\n"));
 }
 
-function cmdScan(repoPath: string | undefined, opts: { watch?: boolean }): void {
+function printProfile(timings: ScanTimings): void {
+  console.error(chalk.gray("  Profile (candidate timings, environment-dependent):"));
+  console.error(chalk.gray(`    walk:   ${timings.walkMs.toFixed(0)}ms`));
+  console.error(chalk.gray(`    parse:  ${timings.parseMs.toFixed(0)}ms`));
+  console.error(chalk.gray(`    checks: ${timings.checksMs.toFixed(0)}ms`));
+  console.error(chalk.gray(`    write:  ${timings.writeMs.toFixed(0)}ms`));
+  console.error(chalk.gray(`    total:  ${timings.totalMs.toFixed(0)}ms\n`));
+}
+
+function cmdScan(
+  repoPath: string | undefined,
+  opts: { watch?: boolean; profile?: boolean },
+): void {
   const cwd = process.cwd();
   const repoRoot = path.resolve(repoPath ?? cwd);
   const commit = getCommit(repoRoot);
@@ -145,7 +157,10 @@ function cmdScan(repoPath: string | undefined, opts: { watch?: boolean }): void 
 
   console.log(chalk.bold(`\nSutra scan → ${repoRoot}\n`));
 
-  const { graph, graphPath } = runScanPipeline(repoRoot, cwd, commit);
+  const { graph, graphPath } = runScanPipeline(repoRoot, cwd, commit, {
+    profile: opts.profile,
+    onProfile: opts.profile ? printProfile : undefined,
+  });
   printScanSummary(graph, graphPath);
 }
 
@@ -377,7 +392,8 @@ program
     "Static structural scan — candidate results."
   )
   .option("--watch", "Re-scan on file changes (debounced, static scan only)")
-  .action((repoPath: string | undefined, opts: { watch?: boolean }) => {
+  .option("--profile", "Print phase timings to stderr (candidate, environment-dependent)")
+  .action((repoPath: string | undefined, opts: { watch?: boolean; profile?: boolean }) => {
     cmdScan(repoPath, opts);
   });
 

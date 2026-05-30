@@ -455,7 +455,7 @@ program
     "Static structural graph tool for JS/TS repos. Writes .sutra/graph.json + view.html. " +
     CLAIM_BOUNDS
   )
-  .version("0.1.0");
+  .version("1.0.0");
 
 program
   .command("scan [repoPath]")

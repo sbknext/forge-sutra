@@ -236,3 +236,22 @@ Memory IDs: 186 (3.2), 187 (4.1), 188 (5.1), 189 (6.1). Tags: `sutra`, `phase1`,
 **Baseline at plan authorship:** 81/81 tests, `GRAPH_VERSION=1`, Phase 1 stories SUTRA-3.2 → SUTRA-6.1 shipped.
 
 **Approval gate:** STOP until owner approves plan; first story SUTRA-7.1 (CLI naming/help).
+
+---
+
+## Phase 7 — v1.0.0 release (2026-05-30)
+
+**Shipped:** Phases 2–7 complete. 117 tests, `forge-sutra@1.0.0`.
+
+| Phase | Deliverables |
+|-------|-------------|
+| 2 | CLI polish, migrate, benchmark, multi-contract, view panels, npm prep |
+| 3 | Contract UX (header stats, filter), export command |
+| 4 | GitHub Actions CI, regression-guard.sh |
+| 5 | JSON Schema + issues CSV/JSON export (via export command) |
+| 6 | `.sutra/hooks.json` post-scan hook runner |
+| 7 | CHANGELOG, v1.0.0, claim bounds audit |
+
+**Claim bounds (final):** All scan/diff/reconcile/export/hook results remain **heuristic / candidate**. Hooks run user-supplied local scripts — not sandboxed. No runtime execution, no auto-fix, no completeness claims.
+
+**BMAD plans:** `_bmad/sutra-phase2/` through `_bmad/sutra-phase7/`.

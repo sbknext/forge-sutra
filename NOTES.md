@@ -226,3 +226,13 @@ What a real Forge SDK should provide that Sutra had to hand-roll:
 ### Brain MCP execution ledger
 
 Memory IDs: 186 (3.2), 187 (4.1), 188 (5.1), 189 (6.1). Tags: `sutra`, `phase1`, `execution-ledger`.
+
+---
+
+## Phase 2 planning pointer
+
+**Plan:** [`docs/PHASE2-PLAN.md`](docs/PHASE2-PLAN.md) — sutra-only scope (CLI polish, schema migration, performance benchmarks, richer contracts, view UX, npm publish prep). Derived from "Missing Forge Primitives" + Phase 1 completion gaps. No cross-repo dogfood stories.
+
+**Baseline at plan authorship:** 81/81 tests, `GRAPH_VERSION=1`, Phase 1 stories SUTRA-3.2 → SUTRA-6.1 shipped.
+
+**Approval gate:** STOP until owner approves plan; first story SUTRA-7.1 (CLI naming/help).

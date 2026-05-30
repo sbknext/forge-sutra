@@ -11,6 +11,106 @@
   var currentGraph = null;
   var cardModels = [];
   var healthFilter = [];
+  var filterState = {
+    search: "",
+    bands: [],
+    unscored: true,
+    confidence: 0,
+    issueKinds: [],
+  };
+
+  function encodeFilterState() {
+    return JSON.stringify({
+      bands: healthFilter.slice().sort(),
+      confidence: Number(Number(filterState.confidence).toFixed(2)),
+      issueKinds: filterState.issueKinds.slice().sort(),
+      search: filterState.search,
+      unscored: filterState.unscored,
+    });
+  }
+
+  function decodeFilterState(raw) {
+    try {
+      var parsed = JSON.parse(decodeURIComponent(raw.replace(/^#/, "")));
+      filterState.search = parsed.search || "";
+      filterState.confidence = parsed.confidence || 0;
+      filterState.unscored = parsed.unscored !== false;
+      filterState.issueKinds = parsed.issueKinds || [];
+      healthFilter = parsed.bands || [];
+    } catch (_) {
+      /* ignore bad hash */
+    }
+  }
+
+  function featureMatchesClient(model) {
+    if (healthFilter.length > 0 || !filterState.unscored) {
+      if (model.health === "unknown" && !filterState.unscored) return false;
+      if (model.health !== "unknown" && healthFilter.length > 0 && healthFilter.indexOf(model.health) === -1)
+        return false;
+    }
+
+    if (filterState.issueKinds.length > 0 && currentGraph) {
+      var issues = currentGraph.issues.filter(function (i) {
+        return i.feature === model.id;
+      });
+      if (!issues.some(function (i) {
+        return filterState.issueKinds.indexOf(i.kind) !== -1;
+      }))
+        return false;
+    }
+
+    var q = (filterState.search || "").trim().toLowerCase();
+    if (q) {
+      var nameMatch =
+        model.name.toLowerCase().indexOf(q) !== -1 ||
+        model.feat.label.toLowerCase().indexOf(q) !== -1;
+      var nodeMatch = false;
+      if (currentGraph) {
+        nodeMatch = currentGraph.nodes
+          .filter(function (n) {
+            return model.feat.node_ids.indexOf(n.id) !== -1;
+          })
+          .some(function (n) {
+            return (
+              n.name.toLowerCase().indexOf(q) !== -1 ||
+              n.id.toLowerCase().indexOf(q) !== -1
+            );
+          });
+      }
+      if (!nameMatch && !nodeMatch) return false;
+    }
+
+    if (filterState.confidence > 0 && currentGraph) {
+      var nodes = currentGraph.nodes.filter(function (n) {
+        return model.feat.node_ids.indexOf(n.id) !== -1;
+      });
+      var ok = nodes.some(function (n) {
+        return n.confidence !== undefined && n.confidence >= filterState.confidence;
+      });
+      var issOk = currentGraph.issues
+        .filter(function (i) {
+          return i.feature === model.id;
+        })
+        .some(function (i) {
+          return i.confidence !== undefined && i.confidence >= filterState.confidence;
+        });
+      if (!ok && !issOk) return false;
+    }
+
+    return true;
+  }
+
+  function updateFilterReadout(visible, total) {
+    var el = document.getElementById("filter-readout");
+    if (!el || !currentGraph) return;
+    el.textContent =
+      "Showing " + visible + " of " + total + " features";
+    var empty = document.getElementById("filter-empty");
+    if (empty) {
+      if (visible === 0 && total > 0) empty.classList.remove("hidden");
+      else empty.classList.add("hidden");
+    }
+  }
 
   var HEALTH_RANK = { unhealthy: 0, warn: 1, unknown: 2, healthy: 3 };
 
@@ -282,12 +382,14 @@
   function renderGrid() {
     if (!currentGraph) return;
     var sortKey = document.getElementById("sort-key").value;
-    var models = sortModels(filterModels(cardModels), sortKey);
+    var filtered = cardModels.filter(featureMatchesClient);
+    var models = sortModels(filtered, sortKey);
     document.getElementById("feature-grid").innerHTML = models
       .map(function (m) {
         return buildFeatureCard(m);
       })
       .join("\n");
+    updateFilterReadout(models.length, cardModels.length);
     wireCards();
   }
 
@@ -331,6 +433,50 @@
 
     document.getElementById("error-state").classList.add("hidden");
     setupHealthFilter();
+    setupIssueKindFilter();
+    syncFilterControls();
+  }
+
+  function syncFilterControls() {
+    var search = document.getElementById("filter-search");
+    if (search) search.value = filterState.search;
+    var conf = document.getElementById("filter-confidence");
+    if (conf) {
+      conf.value = String(filterState.confidence);
+      document.getElementById("conf-readout").textContent = Number(filterState.confidence).toFixed(2);
+    }
+  }
+
+  function setupIssueKindFilter() {
+    var el = document.getElementById("issue-kind-filter");
+    if (!el || !currentGraph) return;
+    var kinds = [];
+    currentGraph.issues.forEach(function (i) {
+      if (kinds.indexOf(i.kind) === -1) kinds.push(i.kind);
+    });
+    kinds.sort();
+    el.innerHTML =
+      "Issues: " +
+      kinds
+        .map(function (k) {
+          return (
+            '<label class="filter-chip"><input type="checkbox" data-kind="' +
+            k +
+            '"> ' +
+            k +
+            "</label>"
+          );
+        })
+        .join(" ");
+    el.querySelectorAll("input").forEach(function (input) {
+      input.addEventListener("change", function () {
+        filterState.issueKinds = [];
+        el.querySelectorAll("input:checked").forEach(function (cb) {
+          filterState.issueKinds.push(cb.getAttribute("data-kind"));
+        });
+        renderGrid();
+      });
+    });
   }
 
   function setupHealthFilter() {
@@ -470,6 +616,36 @@
 
   document.getElementById("btn-reload").addEventListener("click", loadGraph);
   document.getElementById("sort-key").addEventListener("change", renderGrid);
+
+  document.getElementById("filter-search").addEventListener("input", function (e) {
+    filterState.search = e.target.value;
+    renderGrid();
+  });
+  document.getElementById("filter-confidence").addEventListener("input", function (e) {
+    filterState.confidence = parseFloat(e.target.value);
+    document.getElementById("conf-readout").textContent = filterState.confidence.toFixed(2);
+    renderGrid();
+  });
+  document.getElementById("btn-share").addEventListener("click", function () {
+    var enc = encodeFilterState();
+    location.hash = encodeURIComponent(enc);
+    navigator.clipboard.writeText(location.href).catch(function () {});
+  });
+  document.getElementById("btn-export").addEventListener("click", function () {
+    fetch("/export-view", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state: encodeFilterState() }),
+    })
+      .then(function (r) {
+        return r.json();
+      })
+      .then(function (data) {
+        if (data.path) alert("Exported → " + data.path);
+      });
+  });
+
+  if (location.hash) decodeFilterState(location.hash);
 
   if (window.mermaid) {
     mermaid.initialize({ startOnLoad: false, theme: "neutral", securityLevel: "loose" });

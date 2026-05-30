@@ -24,6 +24,7 @@ import { writeScaffolds, SCAFFOLD_KINDS } from "./scaffold.js";
 import { runScanPipeline, startWatch, type ScanTimings } from "./watch.js";
 import { reconcileGraphs, buildReconcileOutput, type ReconcileOutput } from "./reconcile.js";
 import { migrateFile } from "./migrate.js";
+import { exportContracts, exportGraphSchema, exportIssues, writeExport } from "./export.js";
 import type { IssueKind, SutraGraph } from "./types.js";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -366,6 +367,58 @@ function cmdView(): void {
   }
 }
 
+// ── export command ────────────────────────────────────────────────────────────
+
+function cmdExport(
+  target: string,
+  opts: { out?: string; format?: string },
+): void {
+  const cwd = process.cwd();
+  const graphFile = graphFilePath(cwd);
+
+  if (target === "schema") {
+    const content = exportGraphSchema();
+    if (opts.out) {
+      writeExport(content, path.resolve(opts.out));
+      console.log(chalk.gray(`\n  Wrote ${path.resolve(opts.out)}\n`));
+    } else {
+      writeExport(content);
+    }
+    return;
+  }
+
+  if (!fs.existsSync(graphFile)) {
+    console.error(chalk.red(`\nError: ${graphFile} not found. Run scan first.\n`));
+    process.exit(1);
+  }
+
+  let graph: SutraGraph;
+  try {
+    graph = JSON.parse(fs.readFileSync(graphFile, "utf8")) as SutraGraph;
+  } catch (err) {
+    console.error(chalk.red(`\nError reading graph.json: ${String(err)}\n`));
+    process.exit(1);
+  }
+
+  let content: string;
+  if (target === "contracts") {
+    content = exportContracts(graph);
+  } else if (target === "issues") {
+    const fmt = opts.format === "csv" ? "csv" : "json";
+    content = exportIssues(graph, fmt);
+  } else {
+    console.error(chalk.red(`\nError: unknown export target "${target}". Use: contracts, schema, issues\n`));
+    process.exit(1);
+  }
+
+  if (opts.out) {
+    writeExport(content, path.resolve(opts.out));
+    console.log(chalk.gray(`\n  Wrote ${path.resolve(opts.out)}\n`));
+  } else {
+    writeExport(content);
+  }
+}
+
 // ── migrate command ───────────────────────────────────────────────────────────
 
 function cmdMigrate(graphPath: string | undefined): void {
@@ -472,6 +525,18 @@ program
   .option("--force", "Overwrite existing scaffold files")
   .action((opts: { fromIssues?: string; force?: boolean }) => {
     cmdScaffold(opts);
+  });
+
+program
+  .command("export <target>")
+  .description(
+    "Export contracts, graph JSON Schema, or issues from graph.json. " +
+    "Targets: contracts, schema, issues. Candidate/read-only.",
+  )
+  .option("--out <file>", "Write to file instead of stdout")
+  .option("--format <fmt>", "For issues: json (default) or csv")
+  .action((target: string, opts: { out?: string; format?: string }) => {
+    cmdExport(target, opts);
   });
 
 program

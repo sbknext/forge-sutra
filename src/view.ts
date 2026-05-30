@@ -243,6 +243,8 @@ export function renderView(
   const totalNodes = graph.nodes.length;
   const totalEdges = graph.edges.length;
   const totalIssues = graph.issues.length;
+  const contractCount = graph.contracts.length;
+  const contractEndpoints = graph.contracts.reduce((n, c) => n + c.endpoints.length, 0);
 
   // Pre-index issues by feature
   const issuesByFeature = new Map<string, SutraIssue[]>();
@@ -339,7 +341,10 @@ header .counts span { background: #334155; padding: 0.15rem 0.6rem; border-radiu
 .drift-group { margin-bottom: 0.75rem; font-size: 0.82rem; }
 .reconcile-panel { background: #fff; border: 1px solid #cbd5e1; border-left: 4px solid #8b5cf6; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.25rem; }
 .reconcile-panel h2 { font-size: 1rem; font-weight: 700; margin-bottom: 0.35rem; }
-.reconcile-meta { font-size: 0.8rem; color: #64748b; margin-bottom: 0.75rem; }
+.contract-filter { background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.65rem 1rem; margin-bottom: 1rem; font-size: 0.82rem; }
+.contract-filter label { margin-right: 0.5rem; color: #475569; }
+.contract-filter select { padding: 0.25rem 0.5rem; border-radius: 4px; border: 1px solid #cbd5e1; }
+.card.filtered-out { opacity: 0.35; pointer-events: none; }
 </style>
 </head>
 <body>
@@ -354,12 +359,22 @@ header .counts span { background: #334155; padding: 0.15rem 0.6rem; border-radiu
     <span>${totalEdges} edges</span>
     <span>${totalIssues} issues</span>
     <span>${graph.features.length} features</span>
+    ${contractCount > 0 ? `<span>${contractCount} contracts · ${contractEndpoints} declared endpoints</span>` : ""}
   </div>
 </header>
 
 <div class="disclaimer">
   &#9432; Heuristic grouping &mdash; candidate results, not complete. Feature boundaries are approximate. Review findings before acting on them.
 </div>
+
+${graph.contracts.length > 0 ? `
+<div class="contract-filter">
+  <label for="contract-filter-select">Filter by contract feature:</label>
+  <select id="contract-filter-select">
+    <option value="">All features</option>
+    ${graph.contracts.map((c) => `<option value="${esc(c.feature)}">${esc(c.feature)} (${esc(c.file)})</option>`).join("\n")}
+  </select>
+</div>` : ""}
 
 ${diffPanel}
 
@@ -446,6 +461,28 @@ ${panels}
       if (e.key === "Enter" || e.key === " ") {
         var card = e.target.closest(".card");
         if (card) { e.preventDefault(); toggleCard(card); }
+      }
+    });
+  }
+
+  var filterSelect = document.getElementById("contract-filter-select");
+  if (filterSelect && grid) {
+    filterSelect.addEventListener("change", function () {
+      var val = filterSelect.value;
+      var cards = grid.querySelectorAll(".card");
+      for (var j = 0; j < cards.length; j++) {
+        var c = cards[j];
+        if (!val) {
+          c.classList.remove("filtered-out");
+        } else {
+          var label = c.querySelector(".card-label");
+          var text = label ? label.textContent : "";
+          if (text.toLowerCase().indexOf(val.toLowerCase()) !== -1 || c.getAttribute("data-feature") === val) {
+            c.classList.remove("filtered-out");
+          } else {
+            c.classList.add("filtered-out");
+          }
+        }
       }
     });
   }

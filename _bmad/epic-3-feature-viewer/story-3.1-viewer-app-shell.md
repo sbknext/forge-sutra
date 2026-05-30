@@ -1,0 +1,75 @@
+# Story 3.1: Viewer App Shell
+
+- **Epic:** Epic 3 — Realistic Feature Viewer ⭐
+- **Priority:** P1
+- **Status:** Draft
+- **Depends on:** none (the static `view.html` path stays as a fallback; richer cards, drill-down, cross-repo map, and live mode build on this shell in 3.2–3.6)
+- **Estimate:** M
+
+## Story
+As a developer pointing Sutra at a repo, I want a real local viewer — a small dev server plus a single-page app that loads `.sutra/graph.json` over HTTP and re-renders when I re-run `scan`, without me rebuilding or regenerating any HTML — so that the project view becomes an interactive product surface (the foundation Epic 3's feature cards, drill-down, cross-repo map, and live mode are built on) instead of a one-shot static file dump.
+
+## Context
+Today the "view" is a single function, `view.ts:renderView`, that builds one self-contained `view.html` string: it embeds the entire graph as inline JSON in a `<script type="application/json" id="sutra-graph">` tag, inlines all CSS, pulls Mermaid from a CDN, and runs a small vanilla-JS IIFE for card toggling. `cli.ts:cmdView` writes that file to `.sutra/view.html` and `open`s it. Every time the graph changes you must re-run `sutra view` to regenerate the whole document — the renderer is not reading `graph.json` at runtime, it is baking a snapshot of it into HTML. ROADMAP.md Epic 3 line **3.1** ("Viewer app shell — local dev server + SPA; reads `graph.json`, no rebuild to refresh") and the roadmap's framing of Epic 3 ("Replaces the static `view.html` dump with a real viewer") call for exactly this change: a viewer that fetches `graph.json` live so a re-scan is reflected by a browser reload, not a regenerate-and-reopen cycle.
+
+This story is the **shell only** — it establishes the serve-and-fetch architecture and a minimal SPA that renders today's feature grid + detail panels from a fetched graph. It deliberately does not add new visual features (those are 3.2–3.6). Two ROADMAP.md cross-cutting principles bound the design. Principle 5 ("Renderer is a leaf — `graph.json` must be generatable headless; the viewer only consumes it") means `scan` must keep producing a complete, correct `graph.json` with zero dependency on the viewer, and the viewer must only *read* the file the way any consumer would — it never re-scans or mutates the graph. Principle 6 plus BRIEF.md's hard constraints ("Standalone, single-user. No auth, no login, no `user_id`, no multi-user anything … Local-first … serves/opens locally") mean the dev server binds to localhost only, has no auth, no sessions, and no Brain-runtime dependency.
+
+## Acceptance Criteria
+1. A new command `sutra viewer` is wired in `cli.ts` (commander `.command("viewer")`, alongside the existing `scan` and `view` commands). Running it in a directory that contains `.sutra/graph.json` starts a local HTTP server bound to `127.0.0.1` on a default port (e.g. `4577`), prints the URL, and opens it in the default browser on macOS (mirroring `cmdView`'s `open` behaviour, path-print fallback elsewhere).
+2. The server exposes at least: `GET /` → the SPA HTML shell; `GET /graph.json` → the **current** contents of `.sutra/graph.json` read fresh from disk on each request (never an in-memory snapshot captured at server start), with `Content-Type: application/json` and `Cache-Control: no-store`; and `GET` for the SPA's own static asset(s).
+3. The SPA fetches `GET /graph.json` on load, parses it as the `SutraGraph` type from `src/types.ts`, and renders the existing view content from the fetched data: the feature grid (one card per `SutraFeature` with its `label` and `issue_count` badge), node/edge counts in a header, and a per-feature detail panel (issue list + sub-graph) — i.e. the shell reproduces today's `renderView` output, just sourced over HTTP instead of inlined.
+4. **No rebuild to refresh:** after `sutra scan` overwrites `.sutra/graph.json` while the viewer server is running, reloading the browser tab shows the new graph. A visible "Refresh" / "Reload graph" control in the SPA re-fetches `GET /graph.json` and re-renders **without a full page reload**. (Push-on-change / file watching is explicitly Story 3.5, not here — this story only requires that a manual refresh re-reads the file.)
+5. The server validates the fetched payload's `version` against `GRAPH_VERSION` from `src/types.ts`; if `.sutra/graph.json` is missing, unparseable, or its `version` does not match, the SPA shows a clear, non-crashing message (e.g. "No graph found — run `sutra scan` first" / "graph version mismatch — re-run scan") rather than a blank page or stack trace. `sutra viewer` started with no `.sutra/graph.json` present prints a clear error and exits non-zero, consistent with `cmdView`'s existing missing-file handling.
+6. The renderer stays a **leaf**: the viewer process only reads `.sutra/graph.json` and serves static SPA assets — it does **not** import `scanner.ts`, run `runChecks`, call `buildFeatures`, or write/modify any file under `.sutra/`. `scan` continues to produce a valid headless `graph.json` with the viewer absent (regression: the existing scan tests and the `sutra view` static path are unaffected).
+7. **Local-first / single-user honoured:** the server binds to `127.0.0.1` only (not `0.0.0.0`), requires no auth or session, and adds no dependency on `brain-api`, its SQLite tables, or any multi-user infra (BRIEF.md hard constraints). No `user_id` anywhere.
+8. The honest framing is preserved: the SPA carries the same "heuristic / candidate — review before acting" disclaimer the static `view.html` shows (`view.ts` `.disclaimer` block), so the interactive viewer does not overstate its findings any more than the static one did. Claim-bound language only — no "finds all bugs" / "auto-debug" wording is introduced.
+9. The static `sutra view` → `.sutra/view.html` command **still works unchanged** as the offline/no-server fallback; `viewer` is additive, not a replacement, in this story.
+
+## Technical Approach
+- **Stack decision (record it in NOTES.md):** keep the viewer dependency-light to honour Phase-0's small-surface ethos and the "single served bundle" option in the brief. Two acceptable shapes — pick one and note the choice:
+  - **(A) Zero-build, served vanilla SPA (recommended for the shell):** a single `viewer/index.html` + one `viewer/app.js` (vanilla DOM, the same idiom already in `view.ts`'s inline IIFE) served by a tiny Node `http` server. No Vite, no framework, no extra build step — fits the current `tsc`-only build (`package.json` `"build": "tsc"`) and adds zero runtime deps. The SPA reuses the existing CSS from `view.ts` (extract the `<style>` block to a shared `viewer/styles.css` or a `renderStyles()` export).
+  - **(B) Preact + Vite dev/served bundle:** only if 3.2–3.6's interactivity clearly needs it. This adds a build target and dev deps; defer unless justified. **Default to (A) for 3.1**; leave a NOTES.md line so 3.2 can revisit.
+- **New file `src/viewer/server.ts`** (NEW). Exports `startViewerServer(cwd: string, opts?: { port?: number }): Promise<{ url: string; close(): Promise<void> }>`. Uses Node's built-in `node:http` (no new dependency). Routes:
+  - `GET /graph.json` → `fs.readFileSync(path.join(cwd, SUTRA_DIR, GRAPH_FILE))` **on every request** (fresh read = AC-2/AC-4), `Content-Type: application/json`, `Cache-Control: no-store`. Returns `404` with a JSON `{ error }` body if the file is absent.
+  - `GET /` → the SPA HTML shell.
+  - `GET /<asset>` → static `viewer/` assets (`app.js`, `styles.css`), with a strict path allowlist (no `..` traversal).
+  - Binds to `127.0.0.1` only.
+- **New SPA assets under `viewer/`** (NEW dir): `viewer/index.html`, `viewer/app.js`, `viewer/styles.css`. `app.js` `fetch("/graph.json")`, validates `graph.version === GRAPH_VERSION` (inline the numeric constant or expose it via a tiny `GET /meta` — prefer reading it from the served graph and comparing against a value the server injects), then renders the feature grid + detail panels. Reuse the card/panel/Mermaid markup logic currently in `view.ts` (`buildMermaid`, `mermaidShape`, `badgeClass`, `edgeCount`, the card/panel templates) — refactor the pure helpers into a shared module so both the static `renderView` and the SPA share one source of truth and cannot drift.
+- **Refactor for shared rendering (no behaviour change to `view`):** extract the pure, graph→markup helpers from `src/view.ts` (e.g. `buildMermaid`, `mermaidShape`, `badgeClass`, `edgeCount`, `mermaidLabel`, `esc`, and the card/detail-panel builders) into a new `src/viewer/render-shared.ts` (NEW) that both `view.ts:renderView` (static) and the SPA-serving path import. Keep `renderView`'s output byte-stable so the existing `view` command and any snapshot expectations don't change.
+- **`src/cli.ts`** — add `program.command("viewer")` with an optional `--port <n>` option; `cmdViewer(opts)` resolves `cwd`, checks `.sutra/graph.json` exists (reuse the existing `graphFilePath(cwd)` helper + the missing-file error/exit pattern from `cmdView`), calls `startViewerServer(cwd, { port })`, prints the URL, and `open`s it on darwin. The process stays alive serving until interrupted (Ctrl-C); print a hint that it serves until stopped.
+- **No graph.json contract change, no `GRAPH_VERSION` bump.** This story consumes the existing schema; it adds no fields to `types.ts`. The viewer only *reads* `version`/`nodes`/`edges`/`issues`/`features`. (Per ROADMAP.md Principle 4, a version bump is reserved for breaking schema changes — none here.)
+- **Honesty rules respected:** the renderer remains a pure leaf consuming `graph.json` (Principle 5); deterministic ids are untouched (the viewer never generates ids); the "heuristic / candidate" disclaimer is carried into the SPA verbatim; no AI fields are introduced (none exist yet); local-first + single-user constraints are enforced at the bind address and by the absence of any auth/Brain dependency.
+
+## Tasks
+- [ ] Decide and record the viewer stack (A: zero-build vanilla served SPA — recommended) in NOTES.md, with a one-line rationale and a note that 3.2 may revisit if interactivity demands a framework.
+- [ ] Extract pure render helpers from `src/view.ts` into `src/viewer/render-shared.ts` (NEW) and have `renderView` import them, keeping its output byte-stable.
+- [ ] Create `src/viewer/server.ts` (NEW): `startViewerServer(cwd, opts)` on `node:http`, bound to `127.0.0.1`, with `GET /`, `GET /graph.json` (fresh disk read per request, `no-store`), and static-asset routes with a `..`-traversal guard.
+- [ ] Create the SPA assets `viewer/index.html`, `viewer/app.js`, `viewer/styles.css` (NEW): fetch `/graph.json`, validate `version` vs `GRAPH_VERSION`, render the feature grid + detail panels, carry the "heuristic / candidate" disclaimer.
+- [ ] Add a visible "Reload graph" control in the SPA that re-fetches `/graph.json` and re-renders in place (no full page reload).
+- [ ] Add error/empty states in the SPA for missing / unparseable / version-mismatched graph; ensure `sutra viewer` with no `.sutra/graph.json` prints a clear error and exits non-zero.
+- [ ] Wire `program.command("viewer")` + `--port` + `cmdViewer` in `src/cli.ts`, reusing `graphFilePath` and the `cmdView` missing-file pattern; `open` on darwin, print URL elsewhere.
+- [ ] Confirm the viewer process imports none of `scanner.ts` / `checks.ts` / `features.ts` and writes nothing under `.sutra/` (leaf-only).
+- [ ] Update README.md: add a `sutra viewer` section under Commands (local server + SPA, reads `graph.json`, reload to refresh, localhost-only, no auth) and note `sutra view` remains the static fallback.
+- [ ] Add tests + the fixture below; ensure `vitest run` and `tsc` build stay green before commit.
+
+## Test Plan
+Add a new describe block (Section 10) in `tests/sutra.test.ts`. The server must be tested **without launching a browser** — start `startViewerServer` against a fixture dir on an ephemeral port (`port: 0`) and assert over HTTP with `fetch`, then `close()` it. No reliance on `open`.
+
+- **New fixture `tests/fixtures/viewer/.sutra/graph.json`** (NEW) — a small, valid pre-built `SutraGraph` (a handful of nodes/edges, ≥1 feature, ≥1 issue) committed directly so the viewer test does not depend on a live scan. Proves the server serves a real, schema-valid graph. (Add a `.gitignore` exception if `.sutra/` is globally ignored.)
+- **Serves the graph fresh:** `GET /graph.json` returns HTTP 200, `Content-Type: application/json`, `Cache-Control: no-store`, and a body that parses to the fixture graph with `version === GRAPH_VERSION`.
+- **No-rebuild refresh (the core proof):** start the server pointed at a temp dir; write graph A to its `.sutra/graph.json`; `GET /graph.json` returns A; overwrite the file with graph B (different node count) **without restarting the server**; a second `GET /graph.json` returns B. This proves the server reads from disk per request, not a start-time snapshot (AC-2 / AC-4).
+- **Serves the SPA shell:** `GET /` returns HTTP 200 `text/html` containing the SPA mount point and the "heuristic / candidate" disclaimer text (AC-8).
+- **Missing-graph handling:** start the server in a dir with no `.sutra/graph.json`; `GET /graph.json` returns 404 with a JSON `{ error }` body (not a stack trace); and `cmdViewer` against such a dir exits non-zero with the clear message (mirror the existing `cmdView` missing-file test expectation).
+- **Localhost-bind guard:** assert the server's bound address is `127.0.0.1` (single-user / local-first, AC-7).
+- **Leaf guarantee / regression:** after serving, assert no file under the fixture's `.sutra/` was created or modified by the viewer, and that the existing scan/check/feature tests (Sections 1–9) plus the static `renderView` output are unchanged — the refactor into `render-shared.ts` must not alter `view.html` content (regression guard on Principle 5 + AC-6 / AC-9).
+- **Path-traversal guard:** `GET /../package.json` (and url-encoded variants) is rejected (404/400), never serving a file outside `viewer/`.
+
+## Out of Scope
+- **Richer feature cards** (health badge, contract status, AI summary, edge/node breakdowns beyond today's counts) — Story 3.2.
+- **Interactive feature drill-down** (interactive flow graph beyond the current Mermaid panel, traced request paths) — Story 3.3.
+- **Cross-repo / ecosystem map** (repos as clusters, cross-repo edges) — Story 3.4; needs 1.4 / 2.2.
+- **Live / watch mode** (file-watch re-scan + push-to-viewer over WebSocket/SSE; implementing the Phase-0 `--watch` stub) — Story 3.5. This story requires only a *manual* reload to re-read the file.
+- **Search, filter, and share/export** — Story 3.6.
+- **Any change to the graph.json schema or `GRAPH_VERSION`** — this story is read-only over the existing contract.
+- **Framework adoption (Preact/React/Vite build pipeline)** unless 3.2+ proves it necessary — the shell ships as a zero-build served SPA; revisiting the stack is a documented future decision, not part of 3.1.
+- **Multi-user, auth, remote hosting, or `0.0.0.0` exposure** — forbidden by BRIEF.md hard constraints; the viewer is localhost-only and single-user.

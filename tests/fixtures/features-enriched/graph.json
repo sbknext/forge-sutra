@@ -1,18 +1,57 @@
 {
-  "version": 5,
+  "version": 6,
   "repo": "features-enriched",
   "scanned_at": "2026-05-30T12:00:00.000Z",
   "commit": "enriched",
   "nodes": [
-    { "id": "auth/login.ts", "type": "module", "name": "login.ts", "file": "auth/login.ts", "line": 1, "data_shape": null, "feature": "auth" },
-    { "id": "chat/ui.tsx", "type": "component", "name": "ChatUI", "file": "chat/ui.tsx", "line": 1, "data_shape": null, "feature": "chat" },
-    { "id": "legacy/old.ts", "type": "module", "name": "old.ts", "file": "legacy/old.ts", "line": 1, "data_shape": null, "feature": "legacy" }
+    {
+      "id": "auth/login.ts",
+      "type": "module",
+      "name": "login.ts",
+      "file": "auth/login.ts",
+      "line": 1,
+      "data_shape": null,
+      "feature": "auth",
+      "language": "ts"
+    },
+    {
+      "id": "chat/ui.tsx",
+      "type": "component",
+      "name": "ChatUI",
+      "file": "chat/ui.tsx",
+      "line": 1,
+      "data_shape": null,
+      "feature": "chat",
+      "language": "ts"
+    },
+    {
+      "id": "legacy/old.ts",
+      "type": "module",
+      "name": "old.ts",
+      "file": "legacy/old.ts",
+      "line": 1,
+      "data_shape": null,
+      "feature": "legacy",
+      "language": "ts"
+    }
   ],
   "edges": [
-    { "from": "auth/login.ts", "to": "chat/ui.tsx", "kind": "imports" }
+    {
+      "from": "auth/login.ts",
+      "to": "chat/ui.tsx",
+      "kind": "imports"
+    }
   ],
   "issues": [
-    { "severity": "error", "kind": "orphaned_endpoint", "node": "POST /api/x", "feature": "legacy", "message": "orphan", "confidence": 0.4, "provenance": "template-prefix" }
+    {
+      "severity": "error",
+      "kind": "orphaned_endpoint",
+      "node": "POST /api/x",
+      "feature": "legacy",
+      "message": "orphan",
+      "confidence": 0.4,
+      "provenance": "template-prefix"
+    }
   ],
   "features": [
     {
@@ -21,9 +60,16 @@
       "label_source": "ai-inferred",
       "ai_name": "User Authentication",
       "ai_summary": "Login and session handling",
-      "node_ids": ["auth/login.ts"],
+      "node_ids": [
+        "auth/login.ts"
+      ],
       "issue_count": 0,
-      "health": { "score": 92, "band": "green", "inputs": [], "available_signals": [] },
+      "health": {
+        "score": 92,
+        "band": "green",
+        "inputs": [],
+        "available_signals": []
+      },
       "test_edge_count": 0,
       "test_node_ids": [],
       "tested": true
@@ -31,9 +77,16 @@
     {
       "id": "chat",
       "label": "Chat",
-      "node_ids": ["chat/ui.tsx"],
+      "node_ids": [
+        "chat/ui.tsx"
+      ],
       "issue_count": 0,
-      "health": { "score": 55, "band": "amber", "inputs": [], "available_signals": [] },
+      "health": {
+        "score": 55,
+        "band": "amber",
+        "inputs": [],
+        "available_signals": []
+      },
       "test_edge_count": 0,
       "test_node_ids": [],
       "tested": false
@@ -41,16 +94,32 @@
     {
       "id": "legacy",
       "label": "Legacy",
-      "node_ids": ["legacy/old.ts"],
+      "node_ids": [
+        "legacy/old.ts"
+      ],
       "issue_count": 1,
-      "health": { "score": 30, "band": "red", "inputs": [], "available_signals": [] },
+      "health": {
+        "score": 30,
+        "band": "red",
+        "inputs": [],
+        "available_signals": []
+      },
       "test_edge_count": 0,
       "test_node_ids": [],
       "tested": false
     }
   ],
   "contracts": [
-    { "feature": "auth", "file": "features/auth.sutra.md", "endpoints": [{ "method": "POST", "path": "/api/login" }] }
+    {
+      "feature": "auth",
+      "file": "features/auth.sutra.md",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/login"
+        }
+      ]
+    }
   ],
   "flows": []
 }

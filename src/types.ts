@@ -1,7 +1,7 @@
 // graph.json contract — THE single source of truth. Every consumer reads this.
 // Phase 0. Keep ids stable + deterministic so future phases can diff scans.
 
-export const GRAPH_VERSION = 5;
+export const GRAPH_VERSION = 6;
 
 /**
  * How a graph element was derived:
@@ -70,6 +70,8 @@ export interface SutraNode {
   data_shape: string | null;
   /** Heuristic feature grouping id. */
   feature: string;
+  /** Language extractor that produced this node (e.g. "ts", "python-frappe"). */
+  language: string;
   /** Certainty score 0..1 inclusive; absent = unknown. */
   confidence?: number;
   /** How this finding was derived; absent = unknown. */

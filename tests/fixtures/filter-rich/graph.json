@@ -1,22 +1,115 @@
 {
-  "version": 5,
+  "version": 6,
   "repo": "filter-rich",
   "scanned_at": "2026-05-30T12:00:00.000Z",
   "commit": "fr1",
   "nodes": [
-    { "id": "a.ts", "type": "module", "name": "AlphaModule", "file": "a.ts", "line": 1, "data_shape": null, "feature": "alpha", "confidence": 0.9 },
-    { "id": "b.ts", "type": "endpoint", "name": "GET /api/beta", "file": "b.ts", "line": 2, "data_shape": null, "feature": "beta", "confidence": 0.3 },
-    { "id": "c.ts", "type": "module", "name": "GammaPlain", "file": "c.ts", "line": 1, "data_shape": null, "feature": "gamma" }
+    {
+      "id": "a.ts",
+      "type": "module",
+      "name": "AlphaModule",
+      "file": "a.ts",
+      "line": 1,
+      "data_shape": null,
+      "feature": "alpha",
+      "confidence": 0.9,
+      "language": "ts"
+    },
+    {
+      "id": "b.ts",
+      "type": "endpoint",
+      "name": "GET /api/beta",
+      "file": "b.ts",
+      "line": 2,
+      "data_shape": null,
+      "feature": "beta",
+      "confidence": 0.3,
+      "language": "ts"
+    },
+    {
+      "id": "c.ts",
+      "type": "module",
+      "name": "GammaPlain",
+      "file": "c.ts",
+      "line": 1,
+      "data_shape": null,
+      "feature": "gamma",
+      "language": "ts"
+    }
   ],
   "edges": [],
   "issues": [
-    { "severity": "warn", "kind": "orphaned_endpoint", "node": "GET /api/beta", "feature": "beta", "message": "candidate orphan", "confidence": 0.4, "provenance": "template-prefix" },
-    { "severity": "error", "kind": "missing_handler", "node": "c.ts", "feature": "gamma", "message": "missing", "confidence": 0.95, "provenance": "ast-exact" }
+    {
+      "severity": "warn",
+      "kind": "orphaned_endpoint",
+      "node": "GET /api/beta",
+      "feature": "beta",
+      "message": "candidate orphan",
+      "confidence": 0.4,
+      "provenance": "template-prefix"
+    },
+    {
+      "severity": "error",
+      "kind": "missing_handler",
+      "node": "c.ts",
+      "feature": "gamma",
+      "message": "missing",
+      "confidence": 0.95,
+      "provenance": "ast-exact"
+    }
   ],
   "features": [
-    { "id": "alpha", "label": "Alpha", "node_ids": ["a.ts"], "issue_count": 0, "health": { "score": 90, "band": "green", "inputs": [], "available_signals": [] }, "test_edge_count": 0, "test_node_ids": [], "tested": true },
-    { "id": "beta", "label": "Beta Endpoint", "node_ids": ["b.ts"], "issue_count": 1, "health": { "score": 40, "band": "red", "inputs": [], "available_signals": [] }, "test_edge_count": 0, "test_node_ids": [], "tested": false },
-    { "id": "gamma", "label": "Gamma", "node_ids": ["c.ts"], "issue_count": 1, "health": { "score": 60, "band": "amber", "inputs": [], "available_signals": [] }, "test_edge_count": 0, "test_node_ids": [], "tested": false }
+    {
+      "id": "alpha",
+      "label": "Alpha",
+      "node_ids": [
+        "a.ts"
+      ],
+      "issue_count": 0,
+      "health": {
+        "score": 90,
+        "band": "green",
+        "inputs": [],
+        "available_signals": []
+      },
+      "test_edge_count": 0,
+      "test_node_ids": [],
+      "tested": true
+    },
+    {
+      "id": "beta",
+      "label": "Beta Endpoint",
+      "node_ids": [
+        "b.ts"
+      ],
+      "issue_count": 1,
+      "health": {
+        "score": 40,
+        "band": "red",
+        "inputs": [],
+        "available_signals": []
+      },
+      "test_edge_count": 0,
+      "test_node_ids": [],
+      "tested": false
+    },
+    {
+      "id": "gamma",
+      "label": "Gamma",
+      "node_ids": [
+        "c.ts"
+      ],
+      "issue_count": 1,
+      "health": {
+        "score": 60,
+        "band": "amber",
+        "inputs": [],
+        "available_signals": []
+      },
+      "test_edge_count": 0,
+      "test_node_ids": [],
+      "tested": false
+    }
   ],
   "contracts": [],
   "flows": []

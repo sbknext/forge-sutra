@@ -4,7 +4,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { GRAPH_VERSION, type SutraGraph } from "./types.js";
+import { GRAPH_VERSION, type SutraGraph, type SutraNode } from "./types.js";
 import { buildFeatures } from "./features.js";
 
 export const SUPPORTED_MIGRATIONS: Array<{ from: number; to: number }> = [
@@ -13,6 +13,7 @@ export const SUPPORTED_MIGRATIONS: Array<{ from: number; to: number }> = [
   { from: 2, to: 3 },
   { from: 3, to: 4 },
   { from: 4, to: 5 },
+  { from: 5, to: 6 },
 ];
 
 /** Migrate a graph object in-memory. Returns migrated graph. */
@@ -76,6 +77,21 @@ export function migrateGraph(raw: Record<string, unknown>): SutraGraph {
     if (!Array.isArray(raw.flows)) raw.flows = [];
     raw.version = 5;
     version = 5;
+  }
+
+  // v5 → v6: required language field on nodes
+  if (version === 5) {
+    const g = raw as unknown as SutraGraph;
+    if (Array.isArray(g.nodes)) {
+      raw.nodes = g.nodes.map((n) => ({
+        ...n,
+        language: typeof (n as SutraNode & { language?: string }).language === "string"
+          ? (n as SutraNode & { language: string }).language
+          : "ts",
+      }));
+    }
+    raw.version = 6;
+    version = 6;
   }
 
   if (version !== GRAPH_VERSION) {

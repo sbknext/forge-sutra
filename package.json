@@ -1,17 +1,23 @@
 {
-  "name": "sutra",
-  "version": "0.0.0",
-  "description": "Forge subcommand: point it at a repo, get a structural flow graph (graph.json) + a local project view + code-derivable drift checks. Phase 0.",
+  "name": "forge-sutra",
+  "version": "0.1.0",
+  "description": "Static structural graph tool for JS/TS repos. Writes graph.json + HTML view + drift checks. Phase 2.",
   "type": "module",
   "bin": {
     "forge-sutra": "./dist/cli.js",
     "sutra": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
     "lint": "tsc --noEmit",
-    "sutra": "node dist/cli.js"
+    "sutra": "node dist/cli.js",
+    "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {
     "commander": "^12.1.0",
@@ -26,5 +32,16 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sbknext/forge-sutra"
+  },
+  "keywords": [
+    "sutra",
+    "forge",
+    "static-analysis",
+    "typescript",
+    "graph"
+  ]
 }

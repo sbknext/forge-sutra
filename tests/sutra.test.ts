@@ -26,6 +26,8 @@ const CLEAN = path.resolve(__dirname, "fixtures/clean");
 const PROXIED = path.resolve(__dirname, "fixtures/proxied");
 const ASSETS = path.resolve(__dirname, "fixtures/assets");
 const EXTERNAL = path.resolve(__dirname, "fixtures/external");
+const DYNAMIC = path.resolve(__dirname, "fixtures/dynamic");
+const DYNAMIC_MISMATCH = path.resolve(__dirname, "fixtures/dynamic-mismatch");
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 function sortedIds(nodes: SutraNode[]): string[] {
@@ -406,5 +408,61 @@ describe("runChecks — external fixture (external-host allowlist)", () => {
       orphans,
       `Expected 0 orphaned_endpoint but got ${orphans.length}: ${orphans.map((o) => o.node).join(", ")}`
     ).toHaveLength(0);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 11. DYNAMIC-SEGMENT RESOLVER — template literals ↔ [id] / :id routes
+// ═════════════════════════════════════════════════════════════════════════════
+describe("runChecks — dynamic fixture (template literal route matching)", () => {
+  it("emits http edges with :dynamic segment for template literal fetches", () => {
+    const { edges } = scan(DYNAMIC);
+    const httpEdges = edges.filter((e: SutraEdge) => e.kind === "http");
+    const dynamicEdge = httpEdges.find(
+      (e) => e.to.includes("/api/todos") && e.to.includes(":dynamic")
+    );
+    expect(
+      dynamicEdge,
+      "expected http edge path pattern containing :dynamic for /api/todos/${id}"
+    ).toBeDefined();
+  });
+
+  it("emits GET and DELETE endpoint nodes for /api/todos/:id route file", () => {
+    const { nodes } = scan(DYNAMIC);
+    const todoRoutes = nodes.filter(
+      (n) =>
+        n.type === "endpoint" &&
+        n.name.includes("/api/todos") &&
+        n.name.includes(":id")
+    );
+    expect(todoRoutes.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("returns ZERO orphaned_endpoint issues when template fetch matches [id] route", () => {
+    const { nodes, edges } = scan(DYNAMIC);
+    const issues = runChecks(nodes, edges);
+    const orphans = issues.filter((i) => i.kind === "orphaned_endpoint");
+    expect(
+      orphans,
+      `Expected 0 orphaned_endpoint but got ${orphans.length}: ${orphans.map((o) => o.node).join(", ")}`
+    ).toHaveLength(0);
+  });
+});
+
+describe("runChecks — dynamic-mismatch fixture (wrong static path)", () => {
+  it("flags GET /api/todos as orphaned when only /api/todos/:id route exists", () => {
+    const { nodes, edges } = scan(DYNAMIC_MISMATCH);
+    const issues = runChecks(nodes, edges);
+    const orphan = issues.find(
+      (i) =>
+        i.kind === "orphaned_endpoint" &&
+        i.node.includes("GET") &&
+        i.node.includes("/api/todos") &&
+        !i.node.includes(":dynamic")
+    );
+    expect(
+      orphan,
+      "GET /api/todos should be orphaned — no collection route, only [id] route"
+    ).toBeDefined();
   });
 });

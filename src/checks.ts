@@ -69,7 +69,9 @@ function pathMatches(definedPath: string, clientPath: string): boolean {
   const cliSegs = segments(normalisePath(clientPath));
   if (defSegs.length !== cliSegs.length) return false;
   for (let i = 0; i < defSegs.length; i++) {
-    if (!isDynamic(defSegs[i]!) && defSegs[i] !== cliSegs[i]) return false;
+    // Either side may be a dynamic segment (:id, :dynamic, [param]).
+    if (isDynamic(defSegs[i]!) || isDynamic(cliSegs[i]!)) continue;
+    if (defSegs[i] !== cliSegs[i]) return false;
   }
   return true;
 }

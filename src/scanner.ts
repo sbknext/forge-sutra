@@ -711,10 +711,9 @@ function extractUrlParts(node: Node): { path: string; host: string | null } | nu
     if (val.startsWith("/")) return { path: val, host: null };
     return null;
   }
-  // Template literal: keep only the head (static prefix)
+  // Template literal: static head + :dynamic per ${...} span + trailing literals
   if (Node.isTemplateExpression(node)) {
     const head = node.getHead().getLiteralText();
-    if (head && head.startsWith("/")) return { path: head, host: null };
     if (head && head.startsWith("http")) {
       try {
         const u = new URL(head);
@@ -722,6 +721,14 @@ function extractUrlParts(node: Node): { path: string; host: string | null } | nu
       } catch {
         return null;
       }
+    }
+    if (head && head.startsWith("/")) {
+      let pathPattern = head;
+      for (const span of node.getTemplateSpans()) {
+        pathPattern += ":dynamic";
+        pathPattern += span.getLiteral().getLiteralText();
+      }
+      return { path: pathPattern.replace(/\/+$/, "") || "/", host: null };
     }
     return null;
   }

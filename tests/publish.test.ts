@@ -15,7 +15,7 @@ describe("npm publish prep (SUTRA-12.1)", () => {
   it("package.json has publish metadata", () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
     expect(pkg.version).toBe("1.0.0");
-    expect(pkg.files).toEqual(["dist", "README.md", "LICENSE"]);
+    expect(pkg.files).toEqual(["dist", "viewer", "README.md", "LICENSE"]);
     expect(pkg.scripts.prepublishOnly).toContain("build");
     expect(pkg.scripts.prepublishOnly).toContain("test");
     expect(pkg.bin["forge-sutra"]).toBe("./dist/cli.js");

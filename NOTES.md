@@ -269,3 +269,11 @@ Memory IDs: 186 (3.2), 187 (4.1), 188 (5.1), 189 (6.1). Tags: `sutra`, `phase1`,
 - **Truncated:** cycle detected or max depth (32) exceeded.
 
 Inline property calls (e.g. `db.query()` without a resolved `calls` edge) are **not** detected — flows may stop at `handler` instead of `db`. This is an intentional graph-only limit.
+
+---
+
+## Story 3.1 — Viewer app shell (2026-05-30)
+
+**Stack:** Option A — zero-build vanilla SPA (`viewer/index.html` + `app.js` + `styles.css`) served by `src/viewer/server.ts` on `node:http`. No Vite/framework; fits `tsc`-only build. Story 3.2+ may revisit if interactivity demands a framework.
+
+**Architecture:** `sutra viewer` binds `127.0.0.1:4577`, serves SPA + `GET /graph.json` (fresh disk read, `Cache-Control: no-store`). Pure render helpers extracted to `src/viewer/render-shared.ts`; static `sutra view` unchanged as offline fallback.

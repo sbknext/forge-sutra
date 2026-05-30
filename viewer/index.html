@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sutra Viewer</title>
+<link rel="stylesheet" href="/styles.css">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+</head>
+<body>
+
+<header id="app-header">
+  <h1>Sutra Viewer</h1>
+  <div class="meta" id="header-meta">Loading graph…</div>
+  <div class="counts" id="header-counts"></div>
+</header>
+
+<div class="disclaimer" id="disclaimer">
+  &#9432; Heuristic grouping &mdash; candidate results, not complete. Feature boundaries are approximate. Review findings before acting on them.
+</div>
+
+<div class="toolbar">
+  <button type="button" id="btn-reload">Reload graph</button>
+  <span id="live-status" class="meta"></span>
+</div>
+
+<div id="error-state" class="error-state hidden"></div>
+
+<div class="grid" id="feature-grid"></div>
+
+<div id="detail-root"></div>
+
+<script>window.SUTRA_GRAPH_VERSION = __GRAPH_VERSION__;</script>
+<script src="/app.js"></script>
+</body>
+</html>

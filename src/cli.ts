@@ -361,6 +361,47 @@ function cmdScaffold(opts: { fromIssues?: string; force?: boolean }): void {
 
 // ── view command ──────────────────────────────────────────────────────────────
 
+async function cmdViewer(opts: { port?: number }): Promise<void> {
+  const cwd = process.cwd();
+  const graphFile = graphFilePath(cwd);
+
+  if (!fs.existsSync(graphFile)) {
+    console.error(
+      chalk.red(
+        `\nError: ${graphFile} not found.\nRun \`sutra scan\` first to generate it.\n`,
+      ),
+    );
+    process.exit(1);
+  }
+
+  const { startViewerServer, DEFAULT_VIEWER_PORT } = await import("./viewer/server.js");
+  const port = opts.port ?? DEFAULT_VIEWER_PORT;
+  const server = await startViewerServer(cwd, { port });
+
+  console.log(chalk.bold(`\nSutra viewer → ${server.url}`));
+  console.log(chalk.gray("  Localhost only · reads .sutra/graph.json · Ctrl+C to stop.\n"));
+
+  if (process.platform === "darwin") {
+    try {
+      execSync(`open "${server.url}"`, { stdio: "ignore" });
+      console.log(chalk.gray("  Opened in default browser.\n"));
+    } catch {
+      console.log(chalk.gray(`  Open manually: ${server.url}\n`));
+    }
+  } else {
+    console.log(chalk.gray(`  Open manually: ${server.url}\n`));
+  }
+
+  const onSigint = async (): Promise<void> => {
+    await server.close();
+    console.log(chalk.gray("\n  Viewer stopped.\n"));
+    process.exit(0);
+  };
+  process.on("SIGINT", () => {
+    void onSigint();
+  });
+}
+
 function cmdView(): void {
   const cwd = process.cwd();
   const graphFile = graphFilePath(cwd);
@@ -531,6 +572,17 @@ program
   )
   .action(() => {
     cmdView();
+  });
+
+program
+  .command("viewer")
+  .description(
+    "Start local viewer SPA (reads .sutra/graph.json over HTTP). " +
+    "Reload in browser to refresh — no rebuild. Localhost only."
+  )
+  .option("--port <n>", "Port to bind (default 4577)", (v) => parseInt(v, 10))
+  .action(async (opts: { port?: number }) => {
+    await cmdViewer(opts);
   });
 
 program

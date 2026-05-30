@@ -2,128 +2,14 @@ import type { SutraGraph, SutraFeature, SutraIssue, Severity } from "./types.js"
 import type { SutraDiff } from "./diff.js";
 import type { ReconcileOutput } from "./reconcile.js";
 import { formatDiffSummary } from "./diff.js";
-
-/** Escape text for safe HTML insertion. */
-function esc(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-/** Build issue list item with optional provenance/confidence chip. */
-function formatIssueRow(iss: SutraIssue): string {
-  const lowConf =
-    iss.provenance === "template-prefix" ||
-    (iss.confidence !== undefined && iss.confidence < 0.7);
-  const extraClass = lowConf ? " issue-low-confidence" : "";
-  const chip =
-    iss.provenance !== undefined && iss.confidence !== undefined
-      ? `<span class="prov-chip">${esc(iss.provenance)} · ${iss.confidence.toFixed(2)}</span> `
-      : "";
-  return `<li class="issue issue-${esc(iss.severity)}${extraClass}"><span class="sev">${esc(iss.severity.toUpperCase())}</span> ${chip}${esc(iss.message)}</li>`;
-}
-
-/**
- * Sanitize a label for use inside a Mermaid flowchart.
- * Mermaid breaks on: ( ) { } [ ] " ' < > ; #
- * Strategy: strip/replace those chars, then wrap result in double-quotes.
- */
-function mermaidLabel(s: string): string {
-  const clean = s
-    .replace(/["'`]/g, "")
-    .replace(/[(){}[\]<>;#\\]/g, "_")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 60); // keep labels short
-  return `"${clean}"`;
-}
-
-/** Map node type to a Mermaid shape prefix/suffix pair. */
-function mermaidShape(type: string): [string, string] {
-  switch (type) {
-    case "route":
-    case "endpoint":
-      return ["([", "])"];
-    case "component":
-      return ["[/", "/]"];
-    case "test":
-      return ["{{", "}}"];
-    case "handler":
-    case "function":
-      return ["[", "]"];
-    default:
-      return ["(", ")"];
-  }
-}
-
-/** Badge color from structural health band (heuristic). */
-function healthBadgeClass(band: string): string {
-  switch (band) {
-    case "green":
-      return "badge-health-green";
-    case "amber":
-      return "badge-health-amber";
-    case "red":
-      return "badge-health-red";
-    default:
-      return "badge-ok";
-  }
-}
-
-/** Fallback badge color based on issue severity set. */
-function badgeClass(issues: SutraIssue[]): string {
-  if (issues.length === 0) return "badge-ok";
-  if (issues.some((i) => i.severity === "error")) return "badge-error";
-  return "badge-warn";
-}
-
-/** Count edges that touch at least one node in the set. */
-function edgeCount(graph: SutraGraph, nodeIds: Set<string>): number {
-  return graph.edges.filter((e) => nodeIds.has(e.from) || nodeIds.has(e.to)).length;
-}
-
-/** Build a Mermaid flowchart source for nodes whose ids are in nodeIds. */
-function buildMermaid(graph: SutraGraph, nodeIds: Set<string>, truncated: boolean): string {
-  const lines: string[] = ["flowchart LR"];
-
-  // Safe node-id for Mermaid (alphanumeric + underscores only)
-  const safeid = (id: string): string =>
-    "n" + id.replace(/[^a-zA-Z0-9]/g, "_");
-
-  const nodeSet = new Set(nodeIds);
-
-  for (const node of graph.nodes) {
-    if (!nodeSet.has(node.id)) continue;
-    const sid = safeid(node.id);
-    const [open, close] = mermaidShape(node.type);
-    lines.push(`  ${sid}${open}${mermaidLabel(node.name)}${close}`);
-  }
-
-  const kindArrow: Record<string, string> = {
-    calls: "-->",
-    imports: "-.->",
-    renders: "==>",
-    tests: "--o",
-    http: "--x",
-  };
-
-  for (const edge of graph.edges) {
-    if (!nodeSet.has(edge.from) || !nodeSet.has(edge.to)) continue;
-    const arrow = kindArrow[edge.kind] ?? "-->";
-    lines.push(`  ${safeid(edge.from)} ${arrow} ${safeid(edge.to)}`);
-  }
-
-  if (truncated) {
-    lines.push(`  truncated["⚠ truncated — too many nodes"]`);
-  }
-
-  return lines.join("\n");
-}
-
-const CAP = 60;
+import {
+  CAP,
+  esc,
+  formatIssueRow,
+  buildMermaid,
+  edgeCount,
+  healthBadgeClass,
+} from "./viewer/render-shared.js";
 
 /** True when diff has any structural delta. */
 function diffHasChanges(diff: SutraDiff): boolean {

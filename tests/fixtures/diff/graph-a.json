@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "repo": "diff-fixture",
+  "scanned_at": "2026-05-30T00:00:00.000Z",
+  "commit": "aaaaaaa",
+  "nodes": [
+    {
+      "id": "lib/a.ts",
+      "type": "module",
+      "name": "a.ts",
+      "file": "lib/a.ts",
+      "line": 1,
+      "data_shape": null,
+      "feature": "lib"
+    },
+    {
+      "id": "lib/a.ts#foo",
+      "type": "function",
+      "name": "foo",
+      "file": "lib/a.ts",
+      "line": 2,
+      "data_shape": null,
+      "feature": "lib"
+    }
+  ],
+  "edges": [
+    { "from": "lib/a.ts", "to": "lib/a.ts#foo", "kind": "calls" }
+  ],
+  "issues": [
+    {
+      "severity": "error",
+      "kind": "orphaned_endpoint",
+      "node": "POST /api/x",
+      "feature": "api",
+      "message": "no matching route"
+    },
+    {
+      "severity": "warn",
+      "kind": "contract_undeclared_route",
+      "node": "GET /api/ping",
+      "feature": "api",
+      "message": "route not in contract"
+    }
+  ],
+  "features": [],
+  "contracts": []
+}

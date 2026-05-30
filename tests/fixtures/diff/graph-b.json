@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "repo": "diff-fixture",
+  "scanned_at": "2026-05-30T01:00:00.000Z",
+  "commit": "bbbbbbb",
+  "nodes": [
+    {
+      "id": "lib/a.ts",
+      "type": "module",
+      "name": "a.ts",
+      "file": "lib/a.ts",
+      "line": 1,
+      "data_shape": null,
+      "feature": "lib"
+    },
+    {
+      "id": "lib/b.ts",
+      "type": "module",
+      "name": "b.ts",
+      "file": "lib/b.ts",
+      "line": 1,
+      "data_shape": null,
+      "feature": "lib"
+    }
+  ],
+  "edges": [
+    { "from": "lib/a.ts", "to": "lib/b.ts", "kind": "imports" }
+  ],
+  "issues": [
+    {
+      "severity": "error",
+      "kind": "orphaned_endpoint",
+      "node": "POST /api/x",
+      "feature": "api",
+      "message": "no route handler found"
+    },
+    {
+      "severity": "error",
+      "kind": "missing_handler",
+      "node": "lib/missing.ts",
+      "feature": "lib",
+      "message": "import target not found"
+    }
+  ],
+  "features": [],
+  "contracts": []
+}

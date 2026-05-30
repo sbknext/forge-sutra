@@ -19,9 +19,11 @@ import {
   GRAPH_VERSION,
   SUTRA_DIR,
   GRAPH_FILE,
+  GRAPH_PREV_FILE,
   VIEW_FILE,
   type SutraGraph,
 } from "./types.js";
+import { diffGraphs, formatDiffSummary, loadGraphFile } from "./diff.js";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -143,6 +145,47 @@ function cmdScan(repoPath: string | undefined, opts: { watch?: boolean }): void 
   console.log(chalk.gray("  Run `node dist/cli.js view` to open the HTML view.\n"));
 }
 
+// ── diff command ──────────────────────────────────────────────────────────────
+
+function cmdDiff(
+  pathA: string | undefined,
+  pathB: string | undefined,
+  opts: { out?: string },
+): void {
+  const cwd = process.cwd();
+  const defaultA = path.join(cwd, SUTRA_DIR, GRAPH_FILE);
+  const defaultB = path.join(cwd, SUTRA_DIR, GRAPH_PREV_FILE);
+
+  const fileA = path.resolve(pathA ?? defaultA);
+  const fileB = path.resolve(pathB ?? defaultB);
+
+  let graphA: SutraGraph;
+  let graphB: SutraGraph;
+  try {
+    graphA = loadGraphFile(fileA);
+    graphB = loadGraphFile(fileB);
+  } catch (err) {
+    console.error(chalk.red(`\nError: ${String(err)}\n`));
+    process.exit(1);
+  }
+
+  const diff = diffGraphs(graphA, graphB);
+  const summary = formatDiffSummary(diff);
+
+  console.log(chalk.bold(`\nSutra diff: ${fileA} → ${fileB}`));
+  console.log(chalk.gray(`  ${summary}\n`));
+
+  const json = JSON.stringify(diff, null, 2);
+  if (opts.out) {
+    const outPath = path.resolve(opts.out);
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    fs.writeFileSync(outPath, json, "utf8");
+    console.log(chalk.gray(`  Wrote ${outPath}\n`));
+  } else {
+    console.log(json);
+  }
+}
+
 // ── view command ──────────────────────────────────────────────────────────────
 
 function cmdView(): void {
@@ -215,5 +258,25 @@ program
   .action(() => {
     cmdView();
   });
+
+program
+  .command("diff [pathA] [pathB]")
+  .description(
+    "Diff two graph.json files. Defaults: .sutra/graph.json vs .sutra/graph.prev.json. " +
+    "With one path: that file vs .sutra/graph.prev.json. Structural delta only — candidate."
+  )
+  .option(
+    "--out <file>",
+    "Write diff JSON to file instead of stdout (e.g. .sutra/diff.json)",
+  )
+  .action(
+    (
+      pathA: string | undefined,
+      pathB: string | undefined,
+      opts: { out?: string },
+    ) => {
+      cmdDiff(pathA, pathB, opts);
+    },
+  );
 
 program.parse(process.argv);

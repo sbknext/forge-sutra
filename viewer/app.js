@@ -9,6 +9,82 @@
   var rendered = {};
   var activeCard = null;
   var currentGraph = null;
+  var cardModels = [];
+  var healthFilter = [];
+
+  var HEALTH_RANK = { unhealthy: 0, warn: 1, unknown: 2, healthy: 3 };
+
+  function bandToHealth(band, hasHealth) {
+    if (!hasHealth || !band) return "unknown";
+    if (band === "green") return "healthy";
+    if (band === "amber") return "warn";
+    if (band === "red") return "unhealthy";
+    return "unknown";
+  }
+
+  function buildCardModels(graph) {
+    var contractFeatures = {};
+    for (var c = 0; c < graph.contracts.length; c++) {
+      contractFeatures[graph.contracts[c].feature] = true;
+    }
+    return graph.features.map(function (feat) {
+      var nodeIds = {};
+      for (var i = 0; i < feat.node_ids.length; i++) nodeIds[feat.node_ids[i]] = true;
+      var isAi = feat.label_source === "ai-inferred" && feat.ai_name;
+      var hasHealth = feat.health && feat.health.band;
+      return {
+        id: feat.id,
+        feat: feat,
+        name: isAi ? feat.ai_name : feat.label,
+        isAiName: !!isAi,
+        aiSummary: isAi ? feat.ai_summary : undefined,
+        nodeCount: feat.node_ids.length,
+        edgeCount: edgeCount(graph, nodeIds),
+        contractStatus: contractFeatures[feat.id] ? "has_contract" : "none",
+        issueCount: feat.issue_count,
+        health: bandToHealth(feat.health && feat.health.band, hasHealth),
+        healthScore: feat.health && feat.health.score,
+        healthBand: feat.health && feat.health.band,
+      };
+    });
+  }
+
+  function sortModels(models, key) {
+    var out = models.slice();
+    out.sort(function (a, b) {
+      var cmp = 0;
+      if (key === "health" || key === "health-best") {
+        cmp = HEALTH_RANK[a.health] - HEALTH_RANK[b.health];
+        if (key === "health-best") cmp = -cmp;
+      } else if (key === "issues") {
+        cmp = b.issueCount - a.issueCount;
+      } else if (key === "name") {
+        cmp = a.name.localeCompare(b.name);
+      }
+      if (cmp !== 0) return cmp;
+      return a.id.localeCompare(b.id);
+    });
+    return out;
+  }
+
+  function filterModels(models) {
+    if (!healthFilter.length) return models;
+    return models.filter(function (m) {
+      return healthFilter.indexOf(m.health) !== -1;
+    });
+  }
+
+  function healthBadgeClass(health) {
+    if (health === "healthy") return "badge-health-green";
+    if (health === "warn") return "badge-health-amber";
+    if (health === "unhealthy") return "badge-health-red";
+    return "badge-ok";
+  }
+
+  function healthLabel(health) {
+    if (health === "unknown") return "unknown";
+    return health;
+  }
 
   function esc(s) {
     return String(s)
@@ -147,24 +223,17 @@
     );
   }
 
-  function buildFeatureCard(graph, feat, issues) {
-    var nodeIds = {};
-    for (var i = 0; i < feat.node_ids.length; i++) nodeIds[feat.node_ids[i]] = true;
-    var ec = edgeCount(graph, nodeIds);
-    var healthBand =
-      (feat.health && feat.health.band) ||
-      (issues.length === 0
-        ? "green"
-        : issues.some(function (i) {
-            return i.severity === "error";
-          })
-          ? "red"
-          : "amber");
-    var healthScore = (feat.health && feat.health.score) || 0;
-    var isAi = feat.label_source === "ai-inferred" && feat.ai_name;
-    var displayLabel = isAi ? feat.ai_name : feat.label;
-    var aiBadge = isAi
+  function buildFeatureCard(model) {
+    var feat = model.feat;
+    var aiBadge = model.isAiName
       ? '<span class="badge badge-ai" title="ai-inferred label">AI</span>'
+      : "";
+    var contractBadge =
+      model.contractStatus === "has_contract"
+        ? '<span class="badge badge-contract" title="feature.sutra.md present">contract</span>'
+        : '<span class="badge badge-no-contract" title="no contract file">no contract</span>';
+    var summary = model.aiSummary
+      ? '<div class="card-ai-summary">' + esc(model.aiSummary) + "</div>"
       : "";
 
     return (
@@ -172,23 +241,25 @@
       esc(feat.id) +
       '" tabindex="0" role="button" aria-expanded="false">' +
       '<div class="card-header"><span class="card-label">' +
-      esc(displayLabel) +
+      esc(model.name) +
       " " +
       aiBadge +
-      '</span><span class="badge badge-health-' +
-      esc(healthBand) +
-      '" title="Heuristic structural health score">' +
-      healthScore +
-      " · " +
-      esc(healthBand) +
+      '</span><span class="badge ' +
+      healthBadgeClass(model.health) +
+      '" title="Heuristic structural health">' +
+      (model.healthScore != null ? model.healthScore + " · " : "") +
+      esc(healthLabel(model.health)) +
       "</span></div>" +
+      summary +
       '<div class="card-meta">' +
-      feat.node_ids.length +
+      model.nodeCount +
       " node(s) · " +
-      ec +
+      model.edgeCount +
       " edge(s) · " +
-      feat.issue_count +
-      " issue(s)</div>" +
+      model.issueCount +
+      " issue(s) · " +
+      contractBadge +
+      "</div>" +
       '<div class="card-health-note">Heuristic structural health score — not runtime correctness</div>' +
       "</div>"
     );
@@ -206,6 +277,18 @@
 
   function severityRank(sev) {
     return sev === "error" ? 0 : sev === "warn" ? 1 : 2;
+  }
+
+  function renderGrid() {
+    if (!currentGraph) return;
+    var sortKey = document.getElementById("sort-key").value;
+    var models = sortModels(filterModels(cardModels), sortKey);
+    document.getElementById("feature-grid").innerHTML = models
+      .map(function (m) {
+        return buildFeatureCard(m);
+      })
+      .join("\n");
+    wireCards();
   }
 
   function renderGraph(graph) {
@@ -233,12 +316,8 @@
       " features</span>";
 
     var issuesByFeature = indexIssues(graph.issues);
-    var cards = graph.features
-      .map(function (feat) {
-        return buildFeatureCard(graph, feat, issuesByFeature[feat.id] || []);
-      })
-      .join("\n");
-    document.getElementById("feature-grid").innerHTML = cards;
+    cardModels = buildCardModels(graph);
+    renderGrid();
 
     var panels = graph.features
       .map(function (feat) {
@@ -251,7 +330,34 @@
     document.getElementById("detail-root").innerHTML = panels;
 
     document.getElementById("error-state").classList.add("hidden");
-    wireCards();
+    setupHealthFilter();
+  }
+
+  function setupHealthFilter() {
+    var el = document.getElementById("health-filter");
+    var states = ["unhealthy", "warn", "unknown", "healthy"];
+    el.innerHTML =
+      "Filter: " +
+      states
+        .map(function (s) {
+          return (
+            '<label class="filter-chip"><input type="checkbox" data-health="' +
+            s +
+            '"> ' +
+            s +
+            "</label>"
+          );
+        })
+        .join(" ");
+    el.querySelectorAll("input").forEach(function (input) {
+      input.addEventListener("change", function () {
+        healthFilter = [];
+        el.querySelectorAll("input:checked").forEach(function (cb) {
+          healthFilter.push(cb.getAttribute("data-health"));
+        });
+        renderGrid();
+      });
+    });
   }
 
   function showError(msg) {
@@ -315,6 +421,7 @@
 
   function toggleCard(card) {
     var featureId = card.getAttribute("data-feature");
+    location.hash = "feature=" + encodeURIComponent(featureId);
     var panel = document.getElementById("detail-" + featureId);
     if (!panel) return;
 
@@ -351,6 +458,7 @@
   }
 
   document.getElementById("btn-reload").addEventListener("click", loadGraph);
+  document.getElementById("sort-key").addEventListener("change", renderGrid);
 
   if (window.mermaid) {
     mermaid.initialize({ startOnLoad: false, theme: "neutral", securityLevel: "loose" });

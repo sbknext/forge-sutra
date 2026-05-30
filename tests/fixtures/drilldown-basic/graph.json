@@ -1,28 +1,89 @@
 {
-  "version": 5,
+  "version": 6,
   "repo": "drilldown-basic",
   "scanned_at": "2026-05-30T12:00:00.000Z",
   "commit": "dd1",
   "nodes": [
-    { "id": "app/page.tsx", "type": "component", "name": "Page", "file": "app/page.tsx", "line": 1, "data_shape": null, "feature": "widgets" },
-    { "id": "lib/client.ts#fetch", "type": "endpoint", "name": "GET /api/widgets", "file": "lib/client.ts", "line": 2, "data_shape": null, "feature": "widgets" },
-    { "id": "app/api/widgets/route.ts#GET", "type": "handler", "name": "GET", "file": "app/api/widgets/route.ts", "line": 3, "data_shape": null, "feature": "widgets" },
-    { "id": "other/feature.ts", "type": "module", "name": "other", "file": "other/feature.ts", "line": 1, "data_shape": null, "feature": "other" }
+    {
+      "id": "app/page.tsx",
+      "type": "component",
+      "name": "Page",
+      "file": "app/page.tsx",
+      "line": 1,
+      "data_shape": null,
+      "feature": "widgets",
+      "language": "ts"
+    },
+    {
+      "id": "lib/client.ts#fetch",
+      "type": "endpoint",
+      "name": "GET /api/widgets",
+      "file": "lib/client.ts",
+      "line": 2,
+      "data_shape": null,
+      "feature": "widgets",
+      "language": "ts"
+    },
+    {
+      "id": "app/api/widgets/route.ts#GET",
+      "type": "handler",
+      "name": "GET",
+      "file": "app/api/widgets/route.ts",
+      "line": 3,
+      "data_shape": null,
+      "feature": "widgets",
+      "language": "ts"
+    },
+    {
+      "id": "other/feature.ts",
+      "type": "module",
+      "name": "other",
+      "file": "other/feature.ts",
+      "line": 1,
+      "data_shape": null,
+      "feature": "other",
+      "language": "ts"
+    }
   ],
   "edges": [
-    { "from": "app/page.tsx", "to": "lib/client.ts#fetch", "kind": "calls" },
-    { "from": "lib/client.ts#fetch", "to": "http:GET /api/widgets", "kind": "http" },
-    { "from": "app/page.tsx", "to": "app/api/widgets/route.ts#GET", "kind": "renders" },
-    { "from": "other/feature.ts", "to": "app/page.tsx", "kind": "imports" }
+    {
+      "from": "app/page.tsx",
+      "to": "lib/client.ts#fetch",
+      "kind": "calls"
+    },
+    {
+      "from": "lib/client.ts#fetch",
+      "to": "http:GET /api/widgets",
+      "kind": "http"
+    },
+    {
+      "from": "app/page.tsx",
+      "to": "app/api/widgets/route.ts#GET",
+      "kind": "renders"
+    },
+    {
+      "from": "other/feature.ts",
+      "to": "app/page.tsx",
+      "kind": "imports"
+    }
   ],
   "issues": [],
   "features": [
     {
       "id": "widgets",
       "label": "Widgets",
-      "node_ids": ["app/page.tsx", "lib/client.ts#fetch", "app/api/widgets/route.ts#GET"],
+      "node_ids": [
+        "app/page.tsx",
+        "lib/client.ts#fetch",
+        "app/api/widgets/route.ts#GET"
+      ],
       "issue_count": 0,
-      "health": { "score": 80, "band": "green", "inputs": [], "available_signals": [] },
+      "health": {
+        "score": 80,
+        "band": "green",
+        "inputs": [],
+        "available_signals": []
+      },
       "test_edge_count": 0,
       "test_node_ids": [],
       "tested": false

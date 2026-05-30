@@ -608,8 +608,8 @@ describe("confidence & provenance (Story 1.3)", () => {
     "ai-inferred",
   ]);
 
-  it("GRAPH_VERSION is 5 after flows schema bump", () => {
-    expect(GRAPH_VERSION).toBe(5);
+  it("GRAPH_VERSION is 6 after language field schema bump", () => {
+    expect(GRAPH_VERSION).toBe(6);
   });
 
   it("runChecks issues have provenance in union and confidence in [0,1]", () => {

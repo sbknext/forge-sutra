@@ -24,8 +24,8 @@ function scanFeatures(repo: string) {
 }
 
 describe("test-coverage mapping (Story 2.6)", () => {
-  it("GRAPH_VERSION is 5 after test linkage schema bump", () => {
-    expect(GRAPH_VERSION).toBe(5);
+  it("GRAPH_VERSION is 6 after language field schema bump", () => {
+    expect(GRAPH_VERSION).toBe(6);
   });
 
   it("tested fixture has tested true and test edges", () => {

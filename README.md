@@ -108,6 +108,26 @@ forge-sutra reconcile --client .sutra/all/echo-ai.json --server .sutra/all/brain
 
 Cross-repo static match only — ignores auth, env-specific URLs, proxy rewrites, runtime 404s. Results are **candidates for human review**. Known proxy paths (e.g. echo-ai → brain-api via `next.config` rewrites) may still require manual verification.
 
+### `forge-sutra migrate [graphPath]`
+
+Migrate a saved `graph.json` to the current schema version. Default: `.sutra/graph.json`.
+
+```
+forge-sutra migrate
+forge-sutra migrate .sutra/graph.json
+```
+
+Migrates **structure only** — does not re-scan or fix semantic issues.
+
+**Version history:**
+
+| Version | Change |
+|---------|--------|
+| 0 | Phase 0 schema (no `contracts` field) |
+| 1 | Added `contracts[]` from `feature.sutra.md` |
+
+When `GRAPH_VERSION` bumps, run `forge-sutra migrate` on cached graphs before diffing or viewing.
+
 ---
 
 ## graph.json schema

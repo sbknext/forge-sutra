@@ -23,6 +23,7 @@ describe("CLI help (SUTRA-7.1)", () => {
     expect(out).toContain("diff");
     expect(out).toContain("reconcile");
     expect(out).toContain("scaffold");
+    expect(out).toContain("migrate");
   });
 
   it("scan --help includes claim-bounds one-liner", () => {
@@ -48,5 +49,10 @@ describe("CLI help (SUTRA-7.1)", () => {
   it("scaffold --help includes claim-bounds one-liner", () => {
     const out = run("scaffold --help");
     expect(out).toMatch(/candidate|stub/i);
+  });
+
+  it("migrate --help includes structure-only disclaimer", () => {
+    const out = run("migrate --help");
+    expect(out).toMatch(/structure|re-scan|migrate/i);
   });
 });

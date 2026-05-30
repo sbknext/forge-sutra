@@ -23,6 +23,7 @@ import { diffGraphs, formatDiffSummary, loadGraphFile, type SutraDiff } from "./
 import { writeScaffolds, SCAFFOLD_KINDS } from "./scaffold.js";
 import { runScanPipeline, startWatch } from "./watch.js";
 import { reconcileGraphs } from "./reconcile.js";
+import { migrateFile } from "./migrate.js";
 import type { IssueKind } from "./types.js";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -331,6 +332,29 @@ function cmdView(): void {
   }
 }
 
+// ── migrate command ───────────────────────────────────────────────────────────
+
+function cmdMigrate(graphPath: string | undefined): void {
+  const cwd = process.cwd();
+  const file = path.resolve(graphPath ?? path.join(cwd, SUTRA_DIR, GRAPH_FILE));
+
+  try {
+    const result = migrateFile(file);
+    if (result.migrated) {
+      console.log(
+        chalk.bold(`\nMigrated ${file}: v${result.fromVersion} → v${result.toVersion}\n`),
+      );
+    } else {
+      console.log(
+        chalk.green(`\n${file} is already version ${result.toVersion} — no migration needed.\n`),
+      );
+    }
+  } catch (err) {
+    console.error(chalk.red(`\nError: ${String(err)}\n`));
+    process.exit(1);
+  }
+}
+
 // ── program ───────────────────────────────────────────────────────────────────
 
 const program = new Command();
@@ -412,6 +436,16 @@ program
   .option("--force", "Overwrite existing scaffold files")
   .action((opts: { fromIssues?: string; force?: boolean }) => {
     cmdScaffold(opts);
+  });
+
+program
+  .command("migrate [graphPath]")
+  .description(
+    "Migrate graph.json to current schema version. " +
+    "Structure only — does not re-scan or fix semantic issues.",
+  )
+  .action((graphPath: string | undefined) => {
+    cmdMigrate(graphPath);
   });
 
 program.parse(process.argv);

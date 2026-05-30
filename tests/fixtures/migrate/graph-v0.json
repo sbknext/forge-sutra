@@ -1,0 +1,27 @@
+{
+  "version": 0,
+  "repo": "migrate-fixture",
+  "scanned_at": "2026-01-01T00:00:00.000Z",
+  "commit": "abc1234",
+  "nodes": [
+    {
+      "id": "src/index.ts#module",
+      "type": "module",
+      "name": "index",
+      "file": "src/index.ts",
+      "line": 1,
+      "data_shape": null,
+      "feature": "src"
+    }
+  ],
+  "edges": [],
+  "issues": [],
+  "features": [
+    {
+      "id": "src",
+      "label": "Src",
+      "node_ids": ["src/index.ts#module"],
+      "issue_count": 0
+    }
+  ]
+}

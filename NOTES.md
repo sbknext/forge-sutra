@@ -187,3 +187,42 @@ What a real Forge SDK should provide that Sutra had to hand-roll:
 5. **External host allowlist** — distinguishing local routes from external API calls (Telegram, Stripe, etc.) requires knowing which URL prefixes are external. Sutra has no such registry, so external fetch calls trigger false-positive `orphaned_endpoint` findings. A Forge SDK would maintain a known-external-host registry (or read from the project's `package.json` proxy config / Next.js `rewrites`).
 
 6. **Dynamic-segment resolver** — matching `fetch(\`/api/todos/${id}\`, ...)` against `app/api/todos/[id]/route.ts` requires both URL pattern normalization and template-literal partial extraction. A Forge SDK would provide a URL pattern matcher aware of Next.js / Express dynamic segment conventions so route-client pairs can be matched correctly even with dynamic IDs.
+
+---
+
+## Phase 1 — Post-MVP + Stretch (2026-05-30)
+
+**Baseline:** MVP shipped (SUTRA-1.1 → SUTRA-3.1), 62/62 tests, `GRAPH_VERSION=1`.
+**Final:** 81/81 tests, commits `60ad919` → `621b47a`.
+
+### Stories shipped
+
+| Story | Feature | Tests added |
+|-------|---------|-------------|
+| SUTRA-3.2 | Diff summary panel in `sutra view` when `.sutra/diff.json` exists | 6 (view.test.ts) |
+| SUTRA-4.1 | `sutra scaffold [--from-issues] [--force]` → `.sutra/scaffold/` CANDIDATE stubs | 6 (scaffold.test.ts) |
+| SUTRA-5.1 | `sutra scan --watch` debounced re-scan, graph.prev.json + diff.json | 3 (watch.test.ts) |
+| SUTRA-6.1 | `sutra reconcile --client --server` → `cross_repo_orphan` (warn) | 4 (reconcile.test.ts) |
+
+### Regression guard — all still pass
+
+- `broken` fixture: `POST /api/capture` still flagged `orphaned_endpoint`.
+- `proxied` / `assets` / `clean` fixtures unchanged.
+
+### Phase 1 capabilities now available
+
+1. **External-host allowlist** (MVP) — Telegram/Stripe fetches suppressed; optional `.sutra/external-hosts.json`.
+2. **Dynamic-segment resolver** (MVP) — template-literal fetches match `[id]` / `:id` routes.
+3. **`feature.sutra.md` contracts** (MVP) — `contract_missing_route` / `contract_undeclared_route`.
+4. **Graph diffing** (MVP) — `sutra diff`, diff panel in view, watch mode auto-diff.
+5. **Test scaffold** (post-MVP) — candidate stubs only, never auto-run.
+6. **Watch mode** (post-MVP) — static re-scan on file change, not runtime monitor.
+7. **Cross-repo reconcile** (stretch) — client HTTP edges vs server routes; proxy paths still manual.
+
+### Cross-repo reconcile note (echo-ai + brain-api)
+
+`sutra reconcile --client .sutra/all/echo-ai.json --server .sutra/all/brain-api.json` extracts HTTP calls from client edges (external hosts skipped) and matches against server route nodes. Proxied paths (`/api/*` → brain-api via `next.config` rewrites) are **not** automatically mapped — reconcile treats client http edges as literal paths. For echo-ai, most `/api/*` calls are proxied and won't appear as `orphaned_endpoint` on the client scan; reconcile still checks whether matching server routes exist when http edges are present. Manual verification of rewrite tables remains required for full cross-repo confidence.
+
+### Brain MCP execution ledger
+
+Memory IDs: 186 (3.2), 187 (4.1), 188 (5.1), 189 (6.1). Tags: `sutra`, `phase1`, `execution-ledger`.

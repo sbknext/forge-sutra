@@ -13,6 +13,8 @@
 
 import { describe, it, expect } from "vitest";
 import path from "node:path";
+import fs from "node:fs";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { scan } from "../src/scanner.js";
 import { runChecks, checkContractDrift } from "../src/checks.js";
@@ -21,7 +23,13 @@ import { buildFlows } from "../src/flows.js";
 import { loadContracts } from "../src/contracts.js";
 import { renderView } from "../src/view.js";
 import {
+  CACHE_VERSION,
+  loadCache,
+  cacheIndexPath,
+} from "../src/cache.js";
+import {
   GRAPH_VERSION,
+  SUTRA_DIR,
   CONFIDENCE,
   type SutraNode,
   type SutraEdge,
@@ -904,5 +912,87 @@ describe("request flow tracing — proxied regression", () => {
     expect(() => renderView(graph)).not.toThrow();
     const html = renderView(graph);
     expect(html).toContain("<!DOCTYPE html>");
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Incremental scan cache (Story 1.5)
+// ═════════════════════════════════════════════════════════════════════════════
+describe("incremental cache (Story 1.5)", () => {
+  function copyFixtureToTemp(fixture: string): { tmp: string; cacheRoot: string } {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sutra-cache-"));
+    fs.cpSync(fixture, tmp, { recursive: true });
+    const cacheRoot = path.join(tmp, SUTRA_DIR);
+    return { tmp, cacheRoot };
+  }
+
+  it("cold→warm produces deep-equal nodes/edges and identical issues", () => {
+    const { tmp, cacheRoot } = copyFixtureToTemp(CLEAN);
+    const cold = scan(tmp, { cacheRoot });
+    const warm = scan(tmp, { cacheRoot });
+    expect(warm.cacheStats).toEqual({ hits: expect.any(Number), misses: 0 });
+    expect(warm.cacheStats!.hits).toBeGreaterThan(0);
+    expect(warm.nodes).toEqual(cold.nodes);
+    expect(warm.edges).toEqual(cold.edges);
+    const coldIssues = runChecks(cold.nodes, cold.edges);
+    const warmIssues = runChecks(warm.nodes, warm.edges);
+    expect(warmIssues).toEqual(coldIssues);
+    const coldFeatures = buildFeatures(cold.nodes, coldIssues, cold.edges);
+    const warmFeatures = buildFeatures(warm.nodes, warmIssues, warm.edges);
+    expect(warmFeatures).toEqual(coldFeatures);
+  });
+
+  it("writes .sutra/cache/index.json with one entry per source file", () => {
+    const { tmp, cacheRoot } = copyFixtureToTemp(CLEAN);
+    scan(tmp, { cacheRoot });
+    const indexPath = cacheIndexPath(path.join(cacheRoot, "cache"));
+    expect(fs.existsSync(indexPath)).toBe(true);
+    const index = loadCache(path.join(cacheRoot, "cache"));
+    expect(index.cacheVersion).toBe(CACHE_VERSION);
+    const tsFiles = fs
+      .readdirSync(tmp, { recursive: true })
+      .filter((f) => typeof f === "string" && /\.(tsx?|jsx?)$/.test(f));
+    expect(Object.keys(index.entries).length).toBeGreaterThanOrEqual(tsFiles.length);
+  });
+
+  it("single-file change invalidates only that file's cache entry", () => {
+    const { tmp, cacheRoot } = copyFixtureToTemp(CLEAN);
+    scan(tmp, { cacheRoot });
+    const cacheDir = path.join(cacheRoot, "cache");
+    const before = loadCache(cacheDir);
+    const targetRel = Object.keys(before.entries)[0]!;
+    const targetAbs = path.join(tmp, targetRel);
+    fs.writeFileSync(targetAbs, fs.readFileSync(targetAbs, "utf8") + "\n// cache-bust\n");
+    scan(tmp, { cacheRoot });
+    const after = loadCache(cacheDir);
+    expect(after.entries[targetRel]!.contentHash).not.toBe(
+      before.entries[targetRel]!.contentHash,
+    );
+    const unchanged = Object.keys(before.entries).filter((k) => k !== targetRel);
+    for (const rel of unchanged) {
+      if (after.entries[rel]) {
+        expect(after.entries[rel]!.contentHash).toBe(before.entries[rel]!.contentHash);
+      }
+    }
+  });
+
+  it("corrupt cache is tolerated — full re-parse, no throw", () => {
+    const { tmp, cacheRoot } = copyFixtureToTemp(CLEAN);
+    scan(tmp, { cacheRoot });
+    const indexPath = cacheIndexPath(path.join(cacheRoot, "cache"));
+    fs.writeFileSync(indexPath, "{ not json");
+    const cold = scan(tmp);
+    expect(() => scan(tmp, { cacheRoot })).not.toThrow();
+    const recovered = scan(tmp, { cacheRoot });
+    expect(recovered.nodes).toEqual(cold.nodes);
+  });
+
+  it("broken fixture: warm scan issues match cold scan", () => {
+    const { tmp, cacheRoot } = copyFixtureToTemp(BROKEN);
+    const cold = scan(tmp, { cacheRoot });
+    const warm = scan(tmp, { cacheRoot });
+    expect(runChecks(warm.nodes, warm.edges)).toEqual(
+      runChecks(cold.nodes, cold.edges),
+    );
   });
 });

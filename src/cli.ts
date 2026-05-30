@@ -168,7 +168,11 @@ async function cmdBaseline(repoPath: string | undefined): Promise<void> {
 
 // ── scan command ──────────────────────────────────────────────────────────────
 
-function printScanSummary(graph: SutraGraph, outFile: string): void {
+function printScanSummary(
+  graph: SutraGraph,
+  outFile: string,
+  cacheStats?: { hits: number; misses: number },
+): void {
   const { nodes, edges, issues, features } = graph;
   const moduleCount = nodes.filter((n) => n.type === "module").length;
   const endpointCount = nodes.filter((n) => n.type === "endpoint" || n.type === "route").length;
@@ -205,6 +209,11 @@ function printScanSummary(graph: SutraGraph, outFile: string): void {
   }
 
   console.log(`  commit: ${chalk.gray(graph.commit)}`);
+  if (cacheStats) {
+    console.log(
+      chalk.gray(`  cache: ${cacheStats.hits} cached · ${cacheStats.misses} parsed`),
+    );
+  }
   console.log();
 
   if (issues.length === 0) {
@@ -273,7 +282,7 @@ async function cmdScan(
     console.log(chalk.gray("  Static re-scan on file change (candidate). Ctrl+C to stop.\n"));
 
     const initial = runScanPipeline(repoRoot, cwd, commit);
-    printScanSummary(initial.graph, initial.graphPath);
+    printScanSummary(initial.graph, initial.graphPath, initial.cacheStats);
 
     const stop = startWatch({
       repoRoot,
@@ -303,7 +312,7 @@ async function cmdScan(
     console.log(chalk.bold(`\nSutra scan → ${repoRoot}\n`));
   }
 
-  const { graph, graphPath } = await (async () => {
+  const { graph, graphPath, cacheStats } = await (async () => {
     const result = runScanPipeline(repoRoot, cwd, commit, {
       profile: opts.profile,
       onProfile: opts.profile ? printProfile : undefined,
@@ -331,7 +340,7 @@ async function cmdScan(
     return result;
   })();
   if (!opts.check) {
-    printScanSummary(graph, graphPath);
+    printScanSummary(graph, graphPath, cacheStats);
   }
 
   if (opts.check) {

@@ -42,6 +42,7 @@ export interface ScanPipelineResult {
   diffSummary?: string;
   profile?: ScanTimings;
   flowStats?: { confirmed: number; candidate: number };
+  cacheStats?: { hits: number; misses: number };
 }
 
 export interface WatchOptions {
@@ -82,7 +83,9 @@ export function runScanPipeline(
   timings.walkMs = performance.now() - walkStart;
 
   const parseStart = performance.now();
-  const { nodes, edges } = scan(repoRoot);
+  const { nodes, edges, cacheStats } = scan(repoRoot, {
+    cacheRoot: path.join(cwd, SUTRA_DIR),
+  });
   timings.parseMs = performance.now() - parseStart;
 
   const checksStart = performance.now();
@@ -162,6 +165,7 @@ export function runScanPipeline(
       confirmed: flowResult.confirmed,
       candidate: flowResult.candidate,
     },
+    cacheStats,
   };
 }
 

@@ -1,6 +1,6 @@
 # Sutra
 
-Static structural graph tool for JavaScript / TypeScript and **Frappe / Python** repositories. Points at a repo, produces a structural flow graph (`graph.json`) and a local HTML view. **v1.0.0** — Phases 0–7 complete.
+Static structural graph tool for JavaScript / TypeScript and **Frappe / Python** repositories. Points at a repo, produces a structural flow graph (`graph.json`) and a local HTML view. **v1.1.0** — Phases 0–7 complete + incremental scan cache.
 
 ![Sutra overview — echo-ai scan](docs/overview.png)
 
@@ -44,7 +44,7 @@ All commands work via `forge-sutra` or `sutra`. Examples below use `forge-sutra`
 
 Scans `repoPath` (defaults to current working directory). Resolves to an absolute path.
 
-Produces `.sutra/graph.json` in the current working directory.
+Produces `.sutra/graph.json` in the current working directory. Re-scans use a content-hashed per-file cache at `.sutra/cache/` (git-ignored); delete it to force a full re-parse. The scan summary prints `N cached · M parsed` when the cache is active.
 
 ```
 forge-sutra scan /path/to/my-repo

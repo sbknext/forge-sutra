@@ -13,6 +13,18 @@ import {
 import { makeNodeId, relPosix, httpTargetId } from "../util/ids.js";
 import { loadExternalHosts } from "../external-hosts.js";
 import type { Extractor, ExtractorInput, ExtractorResult } from "../extractor.js";
+import {
+  CACHE_VERSION,
+  hashContent,
+  isCacheHit,
+  loadCache,
+  saveCache,
+  sortEdges,
+  sortNodes,
+  type CacheEntry,
+  type CacheStats,
+} from "../cache.js";
+import { GRAPH_VERSION } from "../types.js";
 
 const TS_LANGUAGE = "ts" as const;
 
@@ -139,12 +151,22 @@ export class TsExtractor implements Extractor {
     return SCAN_EXTENSIONS.has(ext) && !isExcludedFile(path.basename(filePath));
   }
 
-  extract(input: ExtractorInput): ExtractorResult {
-    return extractTs(input.repoRoot);
+  extract(input: ExtractorInput): ExtractorResult & { cacheStats?: CacheStats } {
+    return extractTs(input.repoRoot, input.cacheRoot);
   }
 }
 
-function extractTs(repoRoot: string): ExtractorResult {
+function extractTs(
+  repoRoot: string,
+  cacheRoot?: string,
+): ExtractorResult & { cacheStats?: CacheStats } {
+  if (!cacheRoot) {
+    return extractTsFull(repoRoot);
+  }
+  return extractTsWithCache(repoRoot, cacheRoot);
+}
+
+function extractTsFull(repoRoot: string): ExtractorResult {
   const absRoot = path.resolve(repoRoot);
   const allFiles = collectFiles(absRoot);
 
@@ -176,223 +198,8 @@ function extractTs(repoRoot: string): ExtractorResult {
 
   // ── Pass 1: build nodes ───────────────────────────────────────────────────
   for (const sf of project.getSourceFiles()) {
-    const absPath = sf.getFilePath();
-    const rel = relPosix(absRoot, absPath);
-    const feature = featureFor(rel);
-    const isTest = isTestFile(rel);
-    const isJsx = isJsxFile(absPath);
-
     try {
-      // Module node
-      const moduleId = makeNodeId(rel);
-      fileToModuleId.set(absPath, moduleId);
-      const moduleType: NodeType = isTest ? "test" : "module";
-      nodes.push(tsNode({
-        id: moduleId,
-        type: moduleType,
-        name: rel,
-        file: rel,
-        line: 1,
-        data_shape: null,
-        feature,
-      }));
-
-      // ── Next.js App Router endpoints (route.ts / route.js) ────────────────
-      const fileName = path.basename(absPath);
-      const isNextAppRoute =
-        (fileName === "route.ts" || fileName === "route.js") &&
-        absPath.includes(`${path.sep}app${path.sep}`);
-
-      if (isNextAppRoute) {
-        const urlPath = nextAppRouterPath(rel);
-        const exportedFns = sf.getFunctions().filter((f) => f.isExported());
-        const exportedVars = sf
-          .getVariableStatements()
-          .filter((v) => v.isExported());
-
-        const httpExports: string[] = [];
-
-        for (const fn of exportedFns) {
-          const name = fn.getName();
-          if (name && HTTP_METHODS.has(name)) {
-            httpExports.push(name);
-          }
-        }
-        for (const vs of exportedVars) {
-          for (const decl of vs.getDeclarations()) {
-            const name = decl.getName();
-            if (HTTP_METHODS.has(name)) {
-              httpExports.push(name);
-            }
-          }
-        }
-
-        for (const method of httpExports) {
-          const endpointName = `${method} ${urlPath}`;
-          const endpointId = makeNodeId(rel, endpointName);
-          nodes.push(tsNode({
-            id: endpointId,
-            type: "endpoint",
-            name: endpointName,
-            file: rel,
-            line: 1,
-            data_shape: endpointName,
-            feature,
-          }));
-        }
-      }
-
-      // ── Next.js pages/api endpoints ────────────────────────────────────────
-      const isPagesApi =
-        absPath.includes(`${path.sep}pages${path.sep}api${path.sep}`) ||
-        absPath.includes(`/pages/api/`);
-
-      if (isPagesApi && !isNextAppRoute) {
-        const urlPath = nextPagesApiPath(rel);
-        const endpointName = `ANY ${urlPath}`;
-        const endpointId = makeNodeId(rel, endpointName);
-        nodes.push(tsNode({
-          id: endpointId,
-          type: "endpoint",
-          name: endpointName,
-          file: rel,
-          line: 1,
-          data_shape: endpointName,
-          feature,
-        }));
-      }
-
-      // ── Functions / handlers / components ─────────────────────────────────
-      // Top-level function declarations
-      for (const fn of sf.getFunctions()) {
-        const name = fn.getName();
-        if (!name) continue;
-        const line = fn.getStartLineNumber();
-        const isExported = fn.isExported();
-
-        // Get first param type text
-        const params = fn.getParameters();
-        let data_shape: string | null = null;
-        if (params.length > 0) {
-          const typeNode = params[0].getTypeNode();
-          data_shape = typeNode ? typeNode.getText() : null;
-        }
-
-        // Determine type
-        let nodeType: NodeType = "function";
-        if (isExported && isJsx) {
-          // Check if body returns JSX
-          const bodyText = fn.getBody()?.getText() ?? "";
-          if (bodyText.includes("<") && (bodyText.includes("/>") || bodyText.includes("</"))) {
-            nodeType = "component";
-          }
-        }
-        if (isApiLookingFile(rel) && isExported) {
-          nodeType = "handler";
-        }
-
-        const nodeId = makeNodeId(rel, name);
-        symbolToNodeId.set(name, nodeId);
-        nodes.push(tsNode({
-          id: nodeId,
-          type: nodeType,
-          name,
-          file: rel,
-          line,
-          data_shape,
-          feature,
-        }));
-      }
-
-      // Top-level exported variable statements (arrow / function expressions)
-      for (const vs of sf.getVariableStatements()) {
-        if (!vs.isExported()) continue;
-        for (const decl of vs.getDeclarations()) {
-          const name = decl.getName();
-          const init = decl.getInitializer();
-          if (!init) continue;
-
-          const isArrowOrFn =
-            init.getKind() === SyntaxKind.ArrowFunction ||
-            init.getKind() === SyntaxKind.FunctionExpression;
-          if (!isArrowOrFn) continue;
-
-          const line = decl.getStartLineNumber();
-
-          let data_shape: string | null = null;
-          if (
-            Node.isArrowFunction(init) ||
-            Node.isFunctionExpression(init)
-          ) {
-            const params = init.getParameters();
-            if (params.length > 0) {
-              const typeNode = params[0].getTypeNode();
-              data_shape = typeNode ? typeNode.getText() : null;
-            }
-          }
-
-          let nodeType: NodeType = "function";
-          const initText = init.getText();
-          if (isJsx && initText.includes("<") && (initText.includes("/>") || initText.includes("</"))) {
-            nodeType = "component";
-          }
-          if (isApiLookingFile(rel)) {
-            nodeType = "handler";
-          }
-
-          const nodeId = makeNodeId(rel, name);
-          symbolToNodeId.set(name, nodeId);
-          nodes.push(tsNode({
-            id: nodeId,
-            type: nodeType,
-            name,
-            file: rel,
-            line,
-            data_shape,
-            feature,
-          }));
-        }
-      }
-
-      // ── Express/Node endpoints from call expressions ───────────────────────
-      sf.forEachDescendant((node) => {
-        if (node.getKind() !== SyntaxKind.CallExpression) return;
-        if (!Node.isCallExpression(node)) return;
-
-        const expr = node.getExpression();
-        // app.get('/path', ...) / router.post('/path', ...) etc.
-        if (Node.isPropertyAccessExpression(expr)) {
-          const methodName = expr.getName();
-          if (!EXPRESS_LIKE.has(methodName)) return;
-
-          const args = node.getArguments();
-          if (args.length < 1) return;
-
-          const firstArg = args[0];
-          if (!Node.isStringLiteral(firstArg)) return;
-
-          const urlPath = firstArg.getLiteralValue();
-          const method = methodName === "use" || methodName === "all"
-            ? "ANY"
-            : methodName.toUpperCase();
-
-          const endpointName = `${method} ${urlPath}`;
-          const endpointId = makeNodeId(rel, endpointName);
-
-          // Avoid duplicates
-          if (!nodes.find((n) => n.id === endpointId)) {
-            nodes.push(tsNode({
-              id: endpointId,
-              type: "endpoint",
-              name: endpointName,
-              file: rel,
-              line: node.getStartLineNumber(),
-              data_shape: endpointName,
-              feature,
-            }));
-          }
-        }
-      });
+      emitPass1ForFile(sf, absRoot, nodes, fileToModuleId, symbolToNodeId);
     } catch {
       parseErrors++;
     }
@@ -401,190 +208,18 @@ function extractTs(repoRoot: string): ExtractorResult {
   // ── Pass 2: build edges ───────────────────────────────────────────────────
   for (const sf of project.getSourceFiles()) {
     const absPath = sf.getFilePath();
-    const rel = relPosix(absRoot, absPath);
     const moduleId = fileToModuleId.get(absPath);
     if (!moduleId) continue;
-    const isTest = isTestFile(rel);
 
     try {
-      // Import edges
-      for (const imp of sf.getImportDeclarations()) {
-        const specifier = imp.getModuleSpecifierValue();
-        let toId: string;
-
-        if (specifier.startsWith(".")) {
-          // Relative import — resolve to file
-          const resolved = imp.getModuleSpecifierSourceFile();
-          if (resolved) {
-            const resolvedAbs = resolved.getFilePath();
-            const resolvedRel = relPosix(absRoot, resolvedAbs);
-            toId = makeNodeId(resolvedRel);
-          } else {
-            // Can't resolve — use specifier as-is
-            const approx = path.posix.normalize(
-              path.posix.join(path.posix.dirname(rel), specifier)
-            );
-            toId = makeNodeId(approx);
-          }
-        } else {
-          toId = `ext:${specifier}`;
-        }
-
-        edges.push({ from: moduleId, to: toId, kind: "imports" });
-
-        // Test edges: if this is a test file, add "tests" edges for local imports
-        if (isTest && !toId.startsWith("ext:")) {
-          edges.push({ from: moduleId, to: toId, kind: "tests" });
-        }
-      }
-
-      // Call edges + http edges + renders edges
-      sf.forEachDescendant((node) => {
-        if (node.getKind() === SyntaxKind.CallExpression && Node.isCallExpression(node)) {
-          const expr = node.getExpression();
-          const args = node.getArguments();
-
-          // ── http edges: fetch() and axios.*() ─────────────────────────────
-          // Determine enclosing function node id, fall back to module id
-          const enclosingId = (() => {
-            let cur: Node | undefined = node.getParent();
-            while (cur) {
-              if (
-                Node.isFunctionDeclaration(cur) ||
-                Node.isArrowFunction(cur) ||
-                Node.isFunctionExpression(cur)
-              ) {
-                // Try to find matching node
-                if (Node.isFunctionDeclaration(cur) && cur.getName()) {
-                  const id = symbolToNodeId.get(cur.getName()!);
-                  if (id) return id;
-                }
-                return moduleId;
-              }
-              cur = cur.getParent();
-            }
-            return moduleId;
-          })();
-
-          // fetch(url, {method?})
-          if (
-            Node.isIdentifier(expr) &&
-            expr.getText() === "fetch" &&
-            args.length >= 1
-          ) {
-            const urlArg = args[0];
-            const urlParts = extractUrlParts(urlArg);
-            if (urlParts !== null) {
-              let method = "GET";
-              if (args.length >= 2 && Node.isObjectLiteralExpression(args[1])) {
-                const methodProp = args[1]
-                  .getProperties()
-                  .find(
-                    (p) =>
-                      Node.isPropertyAssignment(p) &&
-                      p.getName() === "method"
-                  );
-                if (methodProp && Node.isPropertyAssignment(methodProp)) {
-                  const val = methodProp.getInitializer();
-                  if (val && Node.isStringLiteral(val)) {
-                    method = val.getLiteralValue().toUpperCase();
-                  }
-                }
-              }
-              pushHttpEdge(edges, enclosingId, method, urlParts);
-            }
-          }
-
-          // axios.get/post/...(url) or axios({url, method})
-          if (Node.isPropertyAccessExpression(expr)) {
-            const obj = expr.getExpression();
-            const meth = expr.getName();
-            if (
-              Node.isIdentifier(obj) &&
-              obj.getText() === "axios" &&
-              ["get", "post", "put", "patch", "delete", "request"].includes(meth)
-            ) {
-              const urlArg = args[0];
-              const urlParts = urlArg ? extractUrlParts(urlArg) : null;
-              if (urlParts !== null) {
-                const method = meth === "request" ? "GET" : meth.toUpperCase();
-                pushHttpEdge(edges, enclosingId, method, urlParts);
-              }
-            }
-          }
-
-          // axios({url, method}) — identifier call
-          if (
-            Node.isIdentifier(expr) &&
-            expr.getText() === "axios" &&
-            args.length >= 1 &&
-            Node.isObjectLiteralExpression(args[0])
-          ) {
-            const obj = args[0];
-            let urlParts: UrlExtract | null = null;
-            let method = "GET";
-
-            for (const prop of obj.getProperties()) {
-              if (!Node.isPropertyAssignment(prop)) continue;
-              const pname = prop.getName();
-              const val = prop.getInitializer();
-              if (!val) continue;
-              if (pname === "url") urlParts = extractUrlParts(val);
-              if (pname === "method" && Node.isStringLiteral(val)) {
-                method = val.getLiteralValue().toUpperCase();
-              }
-            }
-            if (urlParts !== null) {
-              pushHttpEdge(edges, enclosingId, method, urlParts);
-            }
-          }
-
-          // calls edges: callee is an identifier matching a known symbol
-          if (Node.isIdentifier(expr)) {
-            const name = expr.getText();
-            const targetId = symbolToNodeId.get(name);
-            if (targetId && targetId !== moduleId) {
-              edges.push({ from: moduleId, to: targetId, kind: "calls" });
-            }
-          }
-        }
-
-        // renders edges: JSX opening elements
-        if (
-          node.getKind() === SyntaxKind.JsxOpeningElement ||
-          node.getKind() === SyntaxKind.JsxSelfClosingElement
-        ) {
-          let tagName: string | undefined;
-          if (Node.isJsxOpeningElement(node) || Node.isJsxSelfClosingElement(node)) {
-            tagName = node.getTagNameNode().getText();
-          }
-          if (tagName) {
-            const targetId = symbolToNodeId.get(tagName);
-            if (targetId) {
-              edges.push({ from: moduleId, to: targetId, kind: "renders" });
-            }
-          }
-        }
-      });
+      emitPass2ForFile(sf, absRoot, edges, fileToModuleId, symbolToNodeId);
     } catch {
       parseErrors++;
     }
   }
 
   // ── Pass 3: detect proxy/rewrite config and emit PROXY nodes ─────────────
-  detectProxyNodes(absRoot, nodes);
-  detectExternalHostNodes(absRoot, nodes);
-
-  // Annotate provenance on nodes: AST-resolved symbols vs synthetic registry nodes.
-  for (const n of nodes) {
-    if (n.name.startsWith("PROXY ") || n.name.startsWith("EXTERNAL ")) {
-      n.provenance = "heuristic";
-    } else {
-      n.provenance = "ast-exact";
-    }
-  }
-
-  return { nodes, edges };
+  return finalizeTsGraph(absRoot, nodes, edges);
 }
 
 // ── Proxy detection ───────────────────────────────────────────────────────────
@@ -791,4 +426,590 @@ function extractUrlParts(node: Node): UrlExtract | null {
     return null;
   }
   return null;
+}
+
+// ── Per-file emit (shared by full + cached scan) ─────────────────────────────
+
+function emitPass1ForFile(
+  sf: import("ts-morph").SourceFile,
+  absRoot: string,
+  nodes: SutraNode[],
+  fileToModuleId: Map<string, string>,
+  symbolToNodeId: Map<string, string>,
+): void {
+  const absPath = sf.getFilePath();
+  const rel = relPosix(absRoot, absPath);
+  const feature = featureFor(rel);
+  const isTest = isTestFile(rel);
+  const isJsx = isJsxFile(absPath);
+
+  const moduleId = makeNodeId(rel);
+  fileToModuleId.set(absPath, moduleId);
+  const moduleType: NodeType = isTest ? "test" : "module";
+  nodes.push(tsNode({
+    id: moduleId,
+    type: moduleType,
+    name: rel,
+    file: rel,
+    line: 1,
+    data_shape: null,
+    feature,
+  }));
+
+  const fileName = path.basename(absPath);
+  const isNextAppRoute =
+    (fileName === "route.ts" || fileName === "route.js") &&
+    absPath.includes(`${path.sep}app${path.sep}`);
+
+  if (isNextAppRoute) {
+    const urlPath = nextAppRouterPath(rel);
+    const exportedFns = sf.getFunctions().filter((f) => f.isExported());
+    const exportedVars = sf.getVariableStatements().filter((v) => v.isExported());
+    const httpExports: string[] = [];
+
+    for (const fn of exportedFns) {
+      const name = fn.getName();
+      if (name && HTTP_METHODS.has(name)) httpExports.push(name);
+    }
+    for (const vs of exportedVars) {
+      for (const decl of vs.getDeclarations()) {
+        const name = decl.getName();
+        if (HTTP_METHODS.has(name)) httpExports.push(name);
+      }
+    }
+
+    for (const method of httpExports) {
+      const endpointName = `${method} ${urlPath}`;
+      const endpointId = makeNodeId(rel, endpointName);
+      nodes.push(tsNode({
+        id: endpointId,
+        type: "endpoint",
+        name: endpointName,
+        file: rel,
+        line: 1,
+        data_shape: endpointName,
+        feature,
+      }));
+    }
+  }
+
+  const isPagesApi =
+    absPath.includes(`${path.sep}pages${path.sep}api${path.sep}`) ||
+    absPath.includes(`/pages/api/`);
+
+  if (isPagesApi && !isNextAppRoute) {
+    const urlPath = nextPagesApiPath(rel);
+    const endpointName = `ANY ${urlPath}`;
+    const endpointId = makeNodeId(rel, endpointName);
+    nodes.push(tsNode({
+      id: endpointId,
+      type: "endpoint",
+      name: endpointName,
+      file: rel,
+      line: 1,
+      data_shape: endpointName,
+      feature,
+    }));
+  }
+
+  for (const fn of sf.getFunctions()) {
+    const name = fn.getName();
+    if (!name) continue;
+    const line = fn.getStartLineNumber();
+    const isExported = fn.isExported();
+    const params = fn.getParameters();
+    let data_shape: string | null = null;
+    if (params.length > 0) {
+      const typeNode = params[0].getTypeNode();
+      data_shape = typeNode ? typeNode.getText() : null;
+    }
+
+    let nodeType: NodeType = "function";
+    if (isExported && isJsx) {
+      const bodyText = fn.getBody()?.getText() ?? "";
+      if (bodyText.includes("<") && (bodyText.includes("/>") || bodyText.includes("</"))) {
+        nodeType = "component";
+      }
+    }
+    if (isApiLookingFile(rel) && isExported) nodeType = "handler";
+
+    const nodeId = makeNodeId(rel, name);
+    symbolToNodeId.set(name, nodeId);
+    nodes.push(tsNode({
+      id: nodeId,
+      type: nodeType,
+      name,
+      file: rel,
+      line,
+      data_shape,
+      feature,
+    }));
+  }
+
+  for (const vs of sf.getVariableStatements()) {
+    if (!vs.isExported()) continue;
+    for (const decl of vs.getDeclarations()) {
+      const name = decl.getName();
+      const init = decl.getInitializer();
+      if (!init) continue;
+      const isArrowOrFn =
+        init.getKind() === SyntaxKind.ArrowFunction ||
+        init.getKind() === SyntaxKind.FunctionExpression;
+      if (!isArrowOrFn) continue;
+
+      const line = decl.getStartLineNumber();
+      let data_shape: string | null = null;
+      if (Node.isArrowFunction(init) || Node.isFunctionExpression(init)) {
+        const params = init.getParameters();
+        if (params.length > 0) {
+          const typeNode = params[0].getTypeNode();
+          data_shape = typeNode ? typeNode.getText() : null;
+        }
+      }
+
+      let nodeType: NodeType = "function";
+      const initText = init.getText();
+      if (isJsx && initText.includes("<") && (initText.includes("/>") || initText.includes("</"))) {
+        nodeType = "component";
+      }
+      if (isApiLookingFile(rel)) nodeType = "handler";
+
+      const nodeId = makeNodeId(rel, name);
+      symbolToNodeId.set(name, nodeId);
+      nodes.push(tsNode({
+        id: nodeId,
+        type: nodeType,
+        name,
+        file: rel,
+        line,
+        data_shape,
+        feature,
+      }));
+    }
+  }
+
+  sf.forEachDescendant((node) => {
+    if (node.getKind() !== SyntaxKind.CallExpression) return;
+    if (!Node.isCallExpression(node)) return;
+    const expr = node.getExpression();
+    if (Node.isPropertyAccessExpression(expr)) {
+      const methodName = expr.getName();
+      if (!EXPRESS_LIKE.has(methodName)) return;
+      const args = node.getArguments();
+      if (args.length < 1) return;
+      const firstArg = args[0];
+      if (!Node.isStringLiteral(firstArg)) return;
+      const urlPath = firstArg.getLiteralValue();
+      const method =
+        methodName === "use" || methodName === "all" ? "ANY" : methodName.toUpperCase();
+      const endpointName = `${method} ${urlPath}`;
+      const endpointId = makeNodeId(rel, endpointName);
+      if (!nodes.find((n) => n.id === endpointId)) {
+        nodes.push(tsNode({
+          id: endpointId,
+          type: "endpoint",
+          name: endpointName,
+          file: rel,
+          line: node.getStartLineNumber(),
+          data_shape: endpointName,
+          feature,
+        }));
+      }
+    }
+  });
+}
+
+function emitPass2ForFile(
+  sf: import("ts-morph").SourceFile,
+  absRoot: string,
+  edges: SutraEdge[],
+  fileToModuleId: Map<string, string>,
+  symbolToNodeId: Map<string, string>,
+): void {
+  const absPath = sf.getFilePath();
+  const rel = relPosix(absRoot, absPath);
+  const moduleId = fileToModuleId.get(absPath);
+  if (!moduleId) return;
+  const isTest = isTestFile(rel);
+
+  for (const imp of sf.getImportDeclarations()) {
+    const specifier = imp.getModuleSpecifierValue();
+    let toId: string;
+
+    if (specifier.startsWith(".")) {
+      const resolved = imp.getModuleSpecifierSourceFile();
+      if (resolved) {
+        const resolvedRel = relPosix(absRoot, resolved.getFilePath());
+        toId = makeNodeId(resolvedRel);
+      } else {
+        const approx = path.posix.normalize(
+          path.posix.join(path.posix.dirname(rel), specifier),
+        );
+        toId = makeNodeId(approx);
+      }
+    } else {
+      toId = `ext:${specifier}`;
+    }
+
+    edges.push({ from: moduleId, to: toId, kind: "imports" });
+    if (isTest && !toId.startsWith("ext:")) {
+      edges.push({ from: moduleId, to: toId, kind: "tests" });
+    }
+  }
+
+  sf.forEachDescendant((node) => {
+    if (node.getKind() === SyntaxKind.CallExpression && Node.isCallExpression(node)) {
+      const expr = node.getExpression();
+      const args = node.getArguments();
+
+      const enclosingId = (() => {
+        let cur: Node | undefined = node.getParent();
+        while (cur) {
+          if (
+            Node.isFunctionDeclaration(cur) ||
+            Node.isArrowFunction(cur) ||
+            Node.isFunctionExpression(cur)
+          ) {
+            if (Node.isFunctionDeclaration(cur) && cur.getName()) {
+              const id = symbolToNodeId.get(cur.getName()!);
+              if (id) return id;
+            }
+            return moduleId;
+          }
+          cur = cur.getParent();
+        }
+        return moduleId;
+      })();
+
+      if (Node.isIdentifier(expr) && expr.getText() === "fetch" && args.length >= 1) {
+        const urlParts = extractUrlParts(args[0]);
+        if (urlParts !== null) {
+          let method = "GET";
+          if (args.length >= 2 && Node.isObjectLiteralExpression(args[1])) {
+            const methodProp = args[1]
+              .getProperties()
+              .find((p) => Node.isPropertyAssignment(p) && p.getName() === "method");
+            if (methodProp && Node.isPropertyAssignment(methodProp)) {
+              const val = methodProp.getInitializer();
+              if (val && Node.isStringLiteral(val)) {
+                method = val.getLiteralValue().toUpperCase();
+              }
+            }
+          }
+          pushHttpEdge(edges, enclosingId, method, urlParts);
+        }
+      }
+
+      if (Node.isPropertyAccessExpression(expr)) {
+        const obj = expr.getExpression();
+        const meth = expr.getName();
+        if (
+          Node.isIdentifier(obj) &&
+          obj.getText() === "axios" &&
+          ["get", "post", "put", "patch", "delete", "request"].includes(meth)
+        ) {
+          const urlParts = args[0] ? extractUrlParts(args[0]) : null;
+          if (urlParts !== null) {
+            const method = meth === "request" ? "GET" : meth.toUpperCase();
+            pushHttpEdge(edges, enclosingId, method, urlParts);
+          }
+        }
+      }
+
+      if (
+        Node.isIdentifier(expr) &&
+        expr.getText() === "axios" &&
+        args.length >= 1 &&
+        Node.isObjectLiteralExpression(args[0])
+      ) {
+        const obj = args[0];
+        let urlParts: UrlExtract | null = null;
+        let method = "GET";
+        for (const prop of obj.getProperties()) {
+          if (!Node.isPropertyAssignment(prop)) continue;
+          const pname = prop.getName();
+          const val = prop.getInitializer();
+          if (!val) continue;
+          if (pname === "url") urlParts = extractUrlParts(val);
+          if (pname === "method" && Node.isStringLiteral(val)) {
+            method = val.getLiteralValue().toUpperCase();
+          }
+        }
+        if (urlParts !== null) pushHttpEdge(edges, enclosingId, method, urlParts);
+      }
+
+      if (Node.isIdentifier(expr)) {
+        const name = expr.getText();
+        const targetId = symbolToNodeId.get(name);
+        if (targetId && targetId !== moduleId) {
+          edges.push({ from: moduleId, to: targetId, kind: "calls" });
+        }
+      }
+    }
+
+    if (
+      node.getKind() === SyntaxKind.JsxOpeningElement ||
+      node.getKind() === SyntaxKind.JsxSelfClosingElement
+    ) {
+      let tagName: string | undefined;
+      if (Node.isJsxOpeningElement(node) || Node.isJsxSelfClosingElement(node)) {
+        tagName = node.getTagNameNode().getText();
+      }
+      if (tagName) {
+        const targetId = symbolToNodeId.get(tagName);
+        if (targetId) edges.push({ from: moduleId, to: targetId, kind: "renders" });
+      }
+    }
+  });
+}
+
+function seedMapsFromCachedNodes(
+  cachedNodes: SutraNode[],
+  absRoot: string,
+  fileToModuleId: Map<string, string>,
+  symbolToNodeId: Map<string, string>,
+): void {
+  for (const n of cachedNodes) {
+    if (n.type === "module" || n.type === "test") {
+      fileToModuleId.set(path.join(absRoot, n.file), n.id);
+    }
+    if (["function", "component", "handler"].includes(n.type) && n.name) {
+      symbolToNodeId.set(n.name, n.id);
+    }
+  }
+}
+
+function findAbsForImportRel(
+  allFiles: string[],
+  absRoot: string,
+  fromRel: string,
+  specifier: string,
+): string | undefined {
+  const approx = path.posix.normalize(path.posix.join(path.posix.dirname(fromRel), specifier));
+  for (const f of allFiles) {
+    const rel = relPosix(absRoot, f);
+    if (rel === approx || rel.replace(/\.(tsx?|jsx?)$/, "") === approx) return f;
+  }
+  for (const ext of [".ts", ".tsx", ".js", ".jsx"]) {
+    const target = approx + ext;
+    for (const f of allFiles) {
+      if (relPosix(absRoot, f) === target) return f;
+    }
+  }
+  return undefined;
+}
+
+function addResolutionOnlyFiles(
+  project: Project,
+  absRoot: string,
+  allFiles: string[],
+  missFiles: Set<string>,
+  hitFiles: Set<string>,
+): void {
+  const inProject = new Set(
+    project.getSourceFiles().map((sf) => sf.getFilePath() as string),
+  );
+
+  for (const sf of project.getSourceFiles()) {
+    const absPath = sf.getFilePath() as string;
+    if (!missFiles.has(absPath)) continue;
+    const rel = relPosix(absRoot, absPath);
+
+    for (const imp of sf.getImportDeclarations()) {
+      const spec = imp.getModuleSpecifierValue();
+      if (!spec.startsWith(".")) continue;
+      if (imp.getModuleSpecifierSourceFile()) continue;
+
+      const targetAbs = findAbsForImportRel(allFiles, absRoot, rel, spec);
+      if (targetAbs && hitFiles.has(targetAbs) && !inProject.has(targetAbs)) {
+        try {
+          project.addSourceFileAtPath(targetAbs as `${string}`);
+          inProject.add(targetAbs);
+        } catch {
+          // skip
+        }
+      }
+    }
+  }
+}
+
+function annotateProvenance(nodes: SutraNode[]): void {
+  for (const n of nodes) {
+    if (n.name.startsWith("PROXY ") || n.name.startsWith("EXTERNAL ")) {
+      n.provenance = "heuristic";
+    } else {
+      n.provenance = "ast-exact";
+    }
+  }
+}
+
+function finalizeTsGraph(absRoot: string, nodes: SutraNode[], edges: SutraEdge[]): ExtractorResult {
+  detectProxyNodes(absRoot, nodes);
+  detectExternalHostNodes(absRoot, nodes);
+  annotateProvenance(nodes);
+  return { nodes: sortNodes(nodes), edges: sortEdges(edges) };
+}
+
+function buildCacheEntriesFromGraph(
+  allFiles: string[],
+  absRoot: string,
+  nodes: SutraNode[],
+  edges: SutraEdge[],
+  hashes: Map<string, string>,
+): Record<string, CacheEntry> {
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  const entries: Record<string, CacheEntry> = {};
+
+  for (const f of allFiles) {
+    const rel = relPosix(absRoot, f);
+    const fileNodes = nodes.filter((n) => n.file === rel);
+    const moduleId = makeNodeId(rel);
+    const fileEdges = edges.filter((e) => {
+      if (e.from === moduleId) return true;
+      const fromNode = nodeById.get(e.from);
+      return fromNode?.file === rel;
+    });
+    entries[rel] = {
+      contentHash: hashes.get(f) ?? hashContent(fs.readFileSync(f)),
+      graphVersion: GRAPH_VERSION,
+      cacheVersion: CACHE_VERSION,
+      nodes: fileNodes,
+      edges: fileEdges,
+    };
+  }
+  return entries;
+}
+
+function extractTsWithCache(
+  repoRoot: string,
+  cacheRoot: string,
+): ExtractorResult & { cacheStats: CacheStats } {
+  const absRoot = path.resolve(repoRoot);
+  const allFiles = collectFiles(absRoot);
+  const loaded = loadCache(cacheRoot);
+
+  const missFiles = new Set<string>();
+  const hitEntries = new Map<string, CacheEntry>();
+  const hashes = new Map<string, string>();
+  let hits = 0;
+  let misses = 0;
+
+  for (const f of allFiles) {
+    const rel = relPosix(absRoot, f);
+    let content: Buffer;
+    try {
+      content = fs.readFileSync(f);
+    } catch {
+      missFiles.add(f);
+      misses++;
+      continue;
+    }
+    const hash = hashContent(content);
+    hashes.set(f, hash);
+    const prev = loaded.entries[rel];
+    if (isCacheHit(prev, hash)) {
+      hitEntries.set(f, prev!);
+      hits++;
+    } else {
+      missFiles.add(f);
+      misses++;
+    }
+  }
+
+  if (misses === allFiles.length) {
+    const full = extractTsFull(repoRoot);
+    const entries = buildCacheEntriesFromGraph(allFiles, absRoot, full.nodes, full.edges, hashes);
+    saveCache(cacheRoot, { cacheVersion: CACHE_VERSION, entries });
+    return { ...full, cacheStats: { hits: 0, misses: allFiles.length } };
+  }
+
+  if (misses === 0) {
+    const nodes: SutraNode[] = [];
+    const edges: SutraEdge[] = [];
+    for (const f of allFiles) {
+      const entry = hitEntries.get(f)!;
+      nodes.push(...entry.nodes);
+      edges.push(...entry.edges);
+    }
+    const result = finalizeTsGraph(absRoot, nodes, edges);
+    const entries: Record<string, CacheEntry> = {};
+    for (const f of allFiles) {
+      const rel = relPosix(absRoot, f);
+      entries[rel] = hitEntries.get(f)!;
+    }
+    saveCache(cacheRoot, { cacheVersion: CACHE_VERSION, entries });
+    return { ...result, cacheStats: { hits, misses: 0 } };
+  }
+
+  const project = new Project({
+    skipFileDependencyResolution: true,
+    compilerOptions: { allowJs: true, jsx: 2 },
+  });
+
+  for (const f of missFiles) {
+    try {
+      project.addSourceFileAtPath(f);
+    } catch {
+      // skip
+    }
+  }
+
+  const hitFiles = new Set(hitEntries.keys());
+  addResolutionOnlyFiles(project, absRoot, allFiles, missFiles, hitFiles);
+
+  const nodes: SutraNode[] = [];
+  const edges: SutraEdge[] = [];
+  const fileToModuleId = new Map<string, string>();
+  const symbolToNodeId = new Map<string, string>();
+
+  for (const entry of hitEntries.values()) {
+    seedMapsFromCachedNodes(entry.nodes, absRoot, fileToModuleId, symbolToNodeId);
+  }
+
+  for (const sf of project.getSourceFiles()) {
+    const absPath = sf.getFilePath();
+    if (!missFiles.has(absPath)) continue;
+    emitPass1ForFile(sf, absRoot, nodes, fileToModuleId, symbolToNodeId);
+  }
+
+  for (const sf of project.getSourceFiles()) {
+    const absPath = sf.getFilePath();
+    if (!missFiles.has(absPath)) continue;
+    emitPass2ForFile(sf, absRoot, edges, fileToModuleId, symbolToNodeId);
+  }
+
+  for (const f of allFiles) {
+    if (!hitEntries.has(f)) continue;
+    const entry = hitEntries.get(f)!;
+    nodes.push(...entry.nodes);
+    edges.push(...entry.edges);
+  }
+
+  const result = finalizeTsGraph(absRoot, nodes, edges);
+
+  const newEntries: Record<string, CacheEntry> = {};
+  for (const f of allFiles) {
+    const rel = relPosix(absRoot, f);
+    if (hitEntries.has(f) && !missFiles.has(f)) {
+      newEntries[rel] = hitEntries.get(f)!;
+      continue;
+    }
+    const fileNodes = result.nodes.filter((n) => n.file === rel);
+    const moduleId = makeNodeId(rel);
+    const fileEdges = result.edges.filter((e) => {
+      if (e.from === moduleId) return true;
+      const fromNode = result.nodes.find((n) => n.id === e.from);
+      return fromNode?.file === rel;
+    });
+    newEntries[rel] = {
+      contentHash: hashes.get(f) ?? hashContent(fs.readFileSync(f)),
+      graphVersion: GRAPH_VERSION,
+      cacheVersion: CACHE_VERSION,
+      nodes: fileNodes,
+      edges: fileEdges,
+    };
+  }
+  saveCache(cacheRoot, { cacheVersion: CACHE_VERSION, entries: newEntries });
+
+  return { ...result, cacheStats: { hits, misses } };
 }

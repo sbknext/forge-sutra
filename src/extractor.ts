@@ -12,6 +12,8 @@ export interface ExtractorResult {
 
 export interface ExtractorInput {
   repoRoot: string;
+  /** When set, TS extractor reads/writes .sutra/cache under this directory. */
+  cacheRoot?: string;
 }
 
 /** Pluggable language extractor. Checks/features run downstream in cli.ts. */

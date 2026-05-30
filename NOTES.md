@@ -178,7 +178,7 @@ What a real Forge SDK should provide that Sutra had to hand-roll:
 
 1. **Repo walker / file collector** — `collectFiles(root)` in scanner.ts walks the FS, applies `EXCLUDED_DIRS` + `SCAN_EXTENSIONS` filters, skips symlinks. A Forge SDK should expose a standard `forge.repo.walk(root, options)` that handles exclusion lists, respects `.forgeignore`, and yields normalized relative paths.
 
-2. **AST service** — the scanner creates a `ts-morph Project`, adds files, and parses them. A Forge service would provide a cached, shared AST for a given repo root so multiple subcommands don't re-parse the same files independently. Especially valuable for large repos (echo-ai: 638 nodes took ~10s on first scan).
+2. **AST service** — the scanner creates a `ts-morph Project`, adds files, and parses them. **Story 1.5 (2026-05-30):** Sutra now caches per-file node/edge contributions under `.sutra/cache/index.json` keyed by SHA-1 content hash; warm re-scans skip ts-morph for unchanged files (`N cached · M parsed` on stdout). A Forge service would still provide a shared cross-subcommand AST layer; Sutra's cache is local-only and TS-extractor scoped.
 
 3. **`.sutra` index store** — Sutra manually does `mkdir -p .sutra && write graph.json`. A Forge SDK would provide a named artifact store per subcommand, with versioning, diffing between scans, and a standard read/write API so other subcommands can consume Sutra's output without parsing raw JSON.
 

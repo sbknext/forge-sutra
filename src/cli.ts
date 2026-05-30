@@ -14,12 +14,23 @@ import { renderView } from "./view.js";
 import {
   SUTRA_DIR,
   GRAPH_FILE,
+  BASELINE_FILE,
   GRAPH_PREV_FILE,
   DIFF_FILE,
   VIEW_FILE,
   RECONCILE_FILE,
+  GRAPH_VERSION,
+  type Severity,
 } from "./types.js";
 import { diffGraphs, formatDiffSummary, loadGraphFile, type SutraDiff } from "./diff.js";
+import {
+  gateFromDiff,
+  formatGateSummary,
+  gateToJson,
+  assertGraphVersionsMatch,
+  GraphVersionMismatchError,
+} from "./gate.js";
+import { formatPrComment } from "./pr-comment.js";
 import { writeScaffolds, SCAFFOLD_KINDS } from "./scaffold.js";
 import { runScanPipeline, startWatch, type ScanTimings } from "./watch.js";
 import { runWatch } from "./watch-viewer.js";
@@ -62,6 +73,97 @@ function graphFilePath(cwd: string): string {
 
 function viewFilePath(cwd: string): string {
   return path.join(sutraDir(cwd), VIEW_FILE);
+}
+
+function baselineFilePath(cwd: string): string {
+  return path.join(sutraDir(cwd), BASELINE_FILE);
+}
+
+function parseFailOn(value: string): Severity {
+  if (value === "error" || value === "warn" || value === "info") return value;
+  console.error(
+    chalk.red(`\nError: --fail-on must be error, warn, or info (got "${value}")\n`),
+  );
+  process.exit(2);
+}
+
+function runCheckGate(
+  baselinePath: string,
+  current: SutraGraph,
+  opts: {
+    failOn: Severity;
+    format: "text" | "json";
+    prComment?: string;
+  },
+): never {
+  if (!fs.existsSync(baselinePath)) {
+    console.error(
+      chalk.red(
+        "\nno baseline found; run `sutra baseline` to record one\n",
+      ),
+    );
+    process.exit(2);
+  }
+
+  let baseline: SutraGraph;
+  try {
+    baseline = loadGraphFile(baselinePath);
+  } catch (err) {
+    console.error(chalk.red(`\nError loading baseline: ${String(err)}\n`));
+    process.exit(2);
+  }
+
+  try {
+    assertGraphVersionsMatch(baseline, current);
+  } catch (err) {
+    if (err instanceof GraphVersionMismatchError) {
+      console.error(
+        chalk.red(
+          `\nbaseline is from a different graph version; re-record it with \`sutra baseline\`\n` +
+            `  baseline v${err.baselineVersion}, current v${err.currentVersion}\n`,
+        ),
+      );
+      process.exit(2);
+    }
+    throw err;
+  }
+
+  const diff = diffGraphs(baseline, current);
+  const gate = gateFromDiff(diff, { failOn: opts.failOn });
+
+  if (opts.prComment !== undefined) {
+    const md = formatPrComment(gate);
+    if (opts.prComment) {
+      fs.mkdirSync(path.dirname(path.resolve(opts.prComment)), { recursive: true });
+      fs.writeFileSync(path.resolve(opts.prComment), md, "utf8");
+    } else {
+      console.log(md);
+    }
+  }
+
+  if (opts.format === "json") {
+    console.log(JSON.stringify(gateToJson(gate), null, 2));
+  } else if (opts.prComment === undefined) {
+    console.log(formatGateSummary(gate));
+  }
+
+  process.exit(gate.exitCode);
+}
+
+async function cmdBaseline(repoPath: string | undefined): Promise<void> {
+  const cwd = process.cwd();
+  const repoRoot = path.resolve(repoPath ?? cwd);
+  const commit = getCommit(repoRoot);
+
+  console.log(chalk.bold(`\nSutra baseline → ${repoRoot}\n`));
+
+  const { graph } = runScanPipeline(repoRoot, cwd, commit);
+  const outPath = baselineFilePath(cwd);
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  fs.writeFileSync(outPath, JSON.stringify(graph, null, 2), "utf8");
+
+  console.log(chalk.gray(`  Wrote ${outPath}`));
+  console.log(chalk.gray(`  graph version: ${graph.version} · ${graph.issues.length} issues\n`));
 }
 
 // ── scan command ──────────────────────────────────────────────────────────────
@@ -151,7 +253,16 @@ function printProfile(timings: ScanTimings): void {
 
 async function cmdScan(
   repoPath: string | undefined,
-  opts: { watch?: boolean; profile?: boolean; ai?: boolean },
+  opts: {
+    watch?: boolean;
+    profile?: boolean;
+    ai?: boolean;
+    check?: boolean;
+    baseline?: string;
+    failOn?: string;
+    format?: string;
+    prComment?: string | boolean;
+  },
 ): Promise<void> {
   const cwd = process.cwd();
   const repoRoot = path.resolve(repoPath ?? cwd);
@@ -187,7 +298,10 @@ async function cmdScan(
     return;
   }
 
-  console.log(chalk.bold(`\nSutra scan → ${repoRoot}\n`));
+  const quietCheck = opts.check && opts.format === "json";
+  if (!quietCheck) {
+    console.log(chalk.bold(`\nSutra scan → ${repoRoot}\n`));
+  }
 
   const { graph, graphPath } = await (async () => {
     const result = runScanPipeline(repoRoot, cwd, commit, {
@@ -216,7 +330,24 @@ async function cmdScan(
     }
     return result;
   })();
-  printScanSummary(graph, graphPath);
+  if (!opts.check) {
+    printScanSummary(graph, graphPath);
+  }
+
+  if (opts.check) {
+    const baselinePath = path.resolve(
+      opts.baseline ?? baselineFilePath(cwd),
+    );
+    const failOn = parseFailOn(opts.failOn ?? "error");
+    const format = opts.format === "json" ? "json" : "text";
+    const prComment =
+      opts.prComment === true
+        ? ""
+        : typeof opts.prComment === "string"
+          ? opts.prComment
+          : undefined;
+    runCheckGate(baselinePath, graph, { failOn, format, prComment });
+  }
 }
 
 // ── watch command (Story 3.5) ─────────────────────────────────────────────────
@@ -594,8 +725,49 @@ program
   .option("--watch", "Re-scan on file changes (debounced, static scan only)")
   .option("--profile", "Print phase timings to stderr (candidate, environment-dependent)")
   .option("--ai", "Enable LLM feature naming (requires SUTRA_AI_API_KEY; opt-in)")
-  .action(async (repoPath: string | undefined, opts: { watch?: boolean; profile?: boolean; ai?: boolean }) => {
-    await cmdScan(repoPath, opts);
+  .option(
+    "--check",
+    "Compare scan to committed baseline; exit 1 on new error-severity issues",
+  )
+  .option(
+    "--baseline <path>",
+    "Baseline graph for --check (default: .sutra/baseline.json)",
+  )
+  .option(
+    "--fail-on <severity>",
+    "Gate threshold: error (default), warn, or info",
+    "error",
+  )
+  .option("--format <fmt>", "Output format for --check: text (default) or json")
+  .option(
+    "--pr-comment [path]",
+    "Write PR comment Markdown for --check (stdout or file)",
+  )
+  .action(
+    async (
+      repoPath: string | undefined,
+      opts: {
+        watch?: boolean;
+        profile?: boolean;
+        ai?: boolean;
+        check?: boolean;
+        baseline?: string;
+        failOn?: string;
+        format?: string;
+        prComment?: string | boolean;
+      },
+    ) => {
+      await cmdScan(repoPath, opts);
+    },
+  );
+
+program
+  .command("baseline [repoPath]")
+  .description(
+    "Scan repo and write .sutra/baseline.json for CI --check gating.",
+  )
+  .action(async (repoPath: string | undefined) => {
+    await cmdBaseline(repoPath);
   });
 
 program

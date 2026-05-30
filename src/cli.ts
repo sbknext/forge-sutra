@@ -10,13 +10,8 @@ import path from "node:path";
 import fs from "node:fs";
 import { execSync } from "node:child_process";
 import chalk from "chalk";
-import { scan } from "./scanner.js";
-import { runChecks, checkContractDrift } from "./checks.js";
-import { buildFeatures } from "./features.js";
 import { renderView } from "./view.js";
-import { loadContracts } from "./contracts.js";
 import {
-  GRAPH_VERSION,
   SUTRA_DIR,
   GRAPH_FILE,
   GRAPH_PREV_FILE,
@@ -26,6 +21,7 @@ import {
 } from "./types.js";
 import { diffGraphs, formatDiffSummary, loadGraphFile, type SutraDiff } from "./diff.js";
 import { writeScaffolds, SCAFFOLD_KINDS } from "./scaffold.js";
+import { runScanPipeline, startWatch } from "./watch.js";
 import type { IssueKind } from "./types.js";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -56,67 +52,29 @@ function viewFilePath(cwd: string): string {
 
 // ── scan command ──────────────────────────────────────────────────────────────
 
-function cmdScan(repoPath: string | undefined, opts: { watch?: boolean }): void {
-  if (opts.watch) {
-    console.log("watch mode: not implemented in Phase 0");
-    process.exit(0);
-  }
-
-  const cwd = process.cwd();
-  const repoRoot = path.resolve(repoPath ?? cwd);
-
-  console.log(chalk.bold(`\nSutra scan → ${repoRoot}\n`));
-
-  // Run pipeline
-  const { nodes, edges } = scan(repoRoot);
-  const checkIssues = runChecks(nodes, edges);
-  const { contracts, issues: contractIssues } = loadContracts(repoRoot);
-  const driftIssues = checkContractDrift(contracts, nodes);
-  const issues = [...checkIssues, ...contractIssues, ...driftIssues];
-  const features = buildFeatures(nodes, issues);
-  const commit = getCommit(repoRoot);
-
-  const graph: SutraGraph = {
-    version: GRAPH_VERSION,
-    repo: path.basename(repoRoot),
-    scanned_at: new Date().toISOString(),
-    commit,
-    nodes,
-    edges,
-    issues,
-    features,
-    contracts,
-  };
-
-  // Write graph.json
-  const outDir = sutraDir(cwd);
-  fs.mkdirSync(outDir, { recursive: true });
-  const outFile = graphFilePath(cwd);
-  fs.writeFileSync(outFile, JSON.stringify(graph, null, 2), "utf8");
-
-  // Count parse-skips (nodes that are modules with no children aren't tracked
-  // directly; scanner doesn't expose parseErrors, but we note module nodes).
+function printScanSummary(graph: SutraGraph, outFile: string): void {
+  const { nodes, edges, issues, features } = graph;
   const moduleCount = nodes.filter((n) => n.type === "module").length;
   const endpointCount = nodes.filter((n) => n.type === "endpoint" || n.type === "route").length;
   const componentCount = nodes.filter((n) => n.type === "component").length;
   const testCount = nodes.filter((n) => n.type === "test").length;
   const fnCount = nodes.filter(
-    (n) => n.type === "function" || n.type === "handler"
+    (n) => n.type === "function" || n.type === "handler",
   ).length;
 
-  // Summary
   console.log(chalk.bold("── Heuristic / candidate scan results ──────────────────"));
   console.log(`  ${chalk.cyan(String(nodes.length))} nodes`);
-  console.log(`    ${moduleCount} modules · ${endpointCount} endpoints · ${componentCount} components · ${testCount} tests · ${fnCount} functions/handlers`);
+  console.log(
+    `    ${moduleCount} modules · ${endpointCount} endpoints · ${componentCount} components · ${testCount} tests · ${fnCount} functions/handlers`,
+  );
   console.log(`  ${chalk.cyan(String(edges.length))} edges`);
   console.log(`  ${chalk.cyan(String(features.length))} features`);
-  console.log(`  commit: ${chalk.gray(commit)}`);
+  console.log(`  commit: ${chalk.gray(graph.commit)}`);
   console.log();
 
   if (issues.length === 0) {
     console.log(chalk.green("  No issues found (heuristic; static approximation)."));
   } else {
-    // Group by kind + severity
     const byKind = new Map<string, typeof issues>();
     for (const iss of issues) {
       const key = `${iss.severity}:${iss.kind}`;
@@ -131,8 +89,8 @@ function cmdScan(repoPath: string | undefined, opts: { watch?: boolean }): void 
         sev === "error"
           ? chalk.red(`[${(sev ?? "").toUpperCase()}]`)
           : sev === "warn"
-          ? chalk.yellow(`[${(sev ?? "").toUpperCase()}]`)
-          : chalk.blue(`[${(sev ?? "").toUpperCase()}]`);
+            ? chalk.yellow(`[${(sev ?? "").toUpperCase()}]`)
+            : chalk.blue(`[${(sev ?? "").toUpperCase()}]`);
       console.log(`  ${label} ${chalk.bold(kind ?? "")} (${group.length})`);
       for (const iss of group.slice(0, 5)) {
         console.log(`    · ${iss.feature}: ${iss.message}`);
@@ -146,6 +104,47 @@ function cmdScan(repoPath: string | undefined, opts: { watch?: boolean }): void 
   console.log();
   console.log(chalk.gray(`  Wrote ${outFile}`));
   console.log(chalk.gray("  Run `node dist/cli.js view` to open the HTML view.\n"));
+}
+
+function cmdScan(repoPath: string | undefined, opts: { watch?: boolean }): void {
+  const cwd = process.cwd();
+  const repoRoot = path.resolve(repoPath ?? cwd);
+  const commit = getCommit(repoRoot);
+
+  if (opts.watch) {
+    console.log(chalk.bold(`\nSutra watch → ${repoRoot}\n`));
+    console.log(chalk.gray("  Static re-scan on file change (candidate). Ctrl+C to stop.\n"));
+
+    const initial = runScanPipeline(repoRoot, cwd, commit);
+    printScanSummary(initial.graph, initial.graphPath);
+
+    const stop = startWatch({
+      repoRoot,
+      cwd,
+      commit,
+      onRescan: (result) => {
+        console.log(chalk.bold(`\n── Re-scan ${result.graph.scanned_at} ──`));
+        console.log(`  ${chalk.cyan(String(result.graph.nodes.length))} nodes · ${chalk.cyan(String(result.graph.issues.length))} issues`);
+        if (result.diffSummary) {
+          console.log(chalk.gray(`  Δ ${result.diffSummary}`));
+        }
+        console.log(chalk.gray(`  Wrote ${result.graphPath}\n`));
+      },
+    });
+
+    const onSigint = (): void => {
+      stop();
+      console.log(chalk.gray("\n  Watch stopped.\n"));
+      process.exit(0);
+    };
+    process.on("SIGINT", onSigint);
+    return;
+  }
+
+  console.log(chalk.bold(`\nSutra scan → ${repoRoot}\n`));
+
+  const { graph, graphPath } = runScanPipeline(repoRoot, cwd, commit);
+  printScanSummary(graph, graphPath);
 }
 
 // ── diff command ──────────────────────────────────────────────────────────────
@@ -317,7 +316,7 @@ program
     "Scan a repo and write .sutra/graph.json. " +
     "Default repoPath = current working directory."
   )
-  .option("--watch", "watch mode (not implemented in Phase 0)")
+  .option("--watch", "Re-scan on file changes (debounced, static scan only)")
   .action((repoPath: string | undefined, opts: { watch?: boolean }) => {
     cmdScan(repoPath, opts);
   });

@@ -1,0 +1,162 @@
+/**
+ * SUTRA-5.1 — watch mode: debounced re-scan on file changes.
+ * Re-runs static scan only — not a runtime monitor.
+ */
+
+import fs from "node:fs";
+import path from "node:path";
+import { scan } from "./scanner.js";
+import { runChecks, checkContractDrift } from "./checks.js";
+import { buildFeatures } from "./features.js";
+import { loadContracts } from "./contracts.js";
+import { diffGraphs, formatDiffSummary } from "./diff.js";
+import {
+  GRAPH_VERSION,
+  SUTRA_DIR,
+  GRAPH_FILE,
+  GRAPH_PREV_FILE,
+  DIFF_FILE,
+  SCAN_EXTENSIONS,
+  EXCLUDED_DIRS,
+  type SutraGraph,
+} from "./types.js";
+
+export interface ScanPipelineResult {
+  graph: SutraGraph;
+  graphPath: string;
+  diffSummary?: string;
+}
+
+export interface WatchOptions {
+  repoRoot: string;
+  cwd: string;
+  commit: string;
+  debounceMs?: number;
+  onRescan?: (result: ScanPipelineResult) => void;
+}
+
+/** Run full scan pipeline and write graph.json. Optionally snapshots prev + diff. */
+export function runScanPipeline(
+  repoRoot: string,
+  cwd: string,
+  commit: string,
+): ScanPipelineResult {
+  const outDir = path.join(cwd, SUTRA_DIR);
+  const graphPath = path.join(outDir, GRAPH_FILE);
+  const prevPath = path.join(outDir, GRAPH_PREV_FILE);
+  const diffPath = path.join(outDir, DIFF_FILE);
+
+  let prevGraph: SutraGraph | undefined;
+  if (fs.existsSync(graphPath)) {
+    try {
+      prevGraph = JSON.parse(fs.readFileSync(graphPath, "utf8")) as SutraGraph;
+      fs.copyFileSync(graphPath, prevPath);
+    } catch {
+      // ignore corrupt prev
+    }
+  }
+
+  const { nodes, edges } = scan(repoRoot);
+  const checkIssues = runChecks(nodes, edges);
+  const { contracts, issues: contractIssues } = loadContracts(repoRoot);
+  const driftIssues = checkContractDrift(contracts, nodes);
+  const issues = [...checkIssues, ...contractIssues, ...driftIssues];
+  const features = buildFeatures(nodes, issues);
+
+  const graph: SutraGraph = {
+    version: GRAPH_VERSION,
+    repo: path.basename(repoRoot),
+    scanned_at: new Date().toISOString(),
+    commit,
+    nodes,
+    edges,
+    issues,
+    features,
+    contracts,
+  };
+
+  fs.mkdirSync(outDir, { recursive: true });
+  fs.writeFileSync(graphPath, JSON.stringify(graph, null, 2), "utf8");
+
+  let diffSummary: string | undefined;
+  if (prevGraph) {
+    const diff = diffGraphs(prevGraph, graph);
+    fs.writeFileSync(diffPath, JSON.stringify(diff, null, 2), "utf8");
+    diffSummary = formatDiffSummary(diff);
+  }
+
+  return { graph, graphPath, diffSummary };
+}
+
+/** Collect watchable source files under repoRoot. */
+export function collectWatchFiles(repoRoot: string): string[] {
+  const files: string[] = [];
+
+  function walk(dir: string): void {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const ent of entries) {
+      if (EXCLUDED_DIRS.has(ent.name)) continue;
+      const full = path.join(dir, ent.name);
+      if (ent.isDirectory()) {
+        walk(full);
+      } else if (ent.isFile()) {
+        const ext = path.extname(ent.name);
+        if (SCAN_EXTENSIONS.has(ext)) files.push(full);
+      }
+    }
+  }
+
+  walk(repoRoot);
+  return files;
+}
+
+/** Debounced watch — returns cleanup function. Exported for testing via onRescan callback. */
+export function startWatch(opts: WatchOptions): () => void {
+  const debounceMs = opts.debounceMs ?? 300;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let running = false;
+  const watchers: fs.FSWatcher[] = [];
+
+  const trigger = (): void => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (running) return;
+      running = true;
+      try {
+        const result = runScanPipeline(opts.repoRoot, opts.cwd, opts.commit);
+        opts.onRescan?.(result);
+      } finally {
+        running = false;
+      }
+    }, debounceMs);
+  };
+
+  const files = collectWatchFiles(opts.repoRoot);
+  const watchedDirs = new Set<string>();
+  for (const f of files) {
+    const dir = path.dirname(f);
+    if (watchedDirs.has(dir)) continue;
+    watchedDirs.add(dir);
+    try {
+      const w = fs.watch(dir, { recursive: false }, (_event, filename) => {
+        if (!filename) return;
+        const ext = path.extname(filename);
+        if (!SCAN_EXTENSIONS.has(ext)) return;
+        trigger();
+      });
+      watchers.push(w);
+    } catch {
+      // fs.watch may fail on some platforms for certain dirs
+    }
+  }
+
+  return () => {
+    if (timer) clearTimeout(timer);
+    for (const w of watchers) w.close();
+  };
+}

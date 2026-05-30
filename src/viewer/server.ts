@@ -19,7 +19,13 @@ const VIEWER_DIR = path.join(PACKAGE_ROOT, "viewer");
 
 export const DEFAULT_VIEWER_PORT = 4577;
 
-const ALLOWED_ASSETS = new Set(["index.html", "app.js", "styles.css", "ecosystem.js", "drilldown.js"]);
+const ALLOWED_ASSETS = new Set([
+  "index.html",
+  "app.js",
+  "styles.css",
+  "ecosystem.js",
+  "drilldown.js",
+]);
 
 export interface ViewerServer {
   url: string;

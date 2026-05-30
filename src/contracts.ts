@@ -7,31 +7,60 @@ import fs from "node:fs";
 import path from "node:path";
 import type { SutraContract, SutraContractEndpoint, SutraIssue } from "./types.js";
 
-const CONTRACT_FILE = "feature.sutra.md";
+const ROOT_CONTRACT = "feature.sutra.md";
 const ENDPOINT_LINE = /^-\s*([A-Z]+)\s+(\/\S+)\s*$/;
 
-export function loadContracts(repoRoot: string): {
-  contracts: SutraContract[];
-  issues: SutraIssue[];
-} {
-  const contractPath = path.join(repoRoot, CONTRACT_FILE);
-  if (!fs.existsSync(contractPath)) {
-    return { contracts: [], issues: [] };
+function discoverContractFiles(repoRoot: string): string[] {
+  const files: string[] = [];
+  const rootPath = path.join(repoRoot, ROOT_CONTRACT);
+  if (fs.existsSync(rootPath)) {
+    files.push(rootPath);
   }
 
+  const featuresDir = path.join(repoRoot, "features");
+  if (fs.existsSync(featuresDir)) {
+    walkFeatures(featuresDir, files);
+  }
+
+  return files.sort();
+}
+
+function walkFeatures(dir: string, out: string[]): void {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const ent of entries) {
+    const full = path.join(dir, ent.name);
+    if (ent.isDirectory()) {
+      walkFeatures(full, out);
+    } else if (ent.isFile() && ent.name.endsWith(".sutra.md")) {
+      out.push(full);
+    }
+  }
+}
+
+function parseContractFile(
+  repoRoot: string,
+  absPath: string,
+): { contract: SutraContract | null; issues: SutraIssue[] } {
+  const relFile = path.relative(repoRoot, absPath).split(path.sep).join("/");
   const issues: SutraIssue[] = [];
+
   let text: string;
   try {
-    text = fs.readFileSync(contractPath, "utf8");
+    text = fs.readFileSync(absPath, "utf8");
   } catch {
     issues.push({
       severity: "warn",
       kind: "contract_parse_error",
-      node: CONTRACT_FILE,
+      node: relFile,
       feature: "contract",
-      message: `Could not read ${CONTRACT_FILE}.`,
+      message: `Could not read ${relFile}.`,
     });
-    return { contracts: [], issues };
+    return { contract: null, issues };
   }
 
   const featureMatch = text.match(/^#\s*Feature:\s*(.+)$/m);
@@ -65,9 +94,9 @@ export function loadContracts(repoRoot: string): {
       issues.push({
         severity: "warn",
         kind: "contract_parse_error",
-        node: CONTRACT_FILE,
-        feature: "contract",
-        message: `Unparseable endpoint line in ${CONTRACT_FILE}: ${trimmed}`,
+        node: relFile,
+        feature: feature,
+        message: `Unparseable endpoint line in ${relFile}: ${trimmed}`,
       });
     }
   }
@@ -76,24 +105,45 @@ export function loadContracts(repoRoot: string): {
     issues.push({
       severity: "warn",
       kind: "contract_parse_error",
-      node: CONTRACT_FILE,
-      feature: "contract",
-      message: `No valid endpoint lines under ## endpoints in ${CONTRACT_FILE}.`,
+      node: relFile,
+      feature: feature,
+      message: `No valid endpoint lines under ## endpoints in ${relFile}.`,
     });
   }
 
-  if (endpoints.length === 0 && issues.length > 0) {
-    return { contracts: [], issues };
+  if (endpoints.length === 0) {
+    return { contract: null, issues };
   }
 
   return {
-    contracts: [
-      {
-        feature,
-        file: CONTRACT_FILE,
-        endpoints,
-      },
-    ],
+    contract: {
+      feature,
+      file: relFile,
+      endpoints,
+    },
     issues,
   };
+}
+
+export function loadContracts(repoRoot: string): {
+  contracts: SutraContract[];
+  issues: SutraIssue[];
+} {
+  const files = discoverContractFiles(repoRoot);
+  if (files.length === 0) {
+    return { contracts: [], issues: [] };
+  }
+
+  const contracts: SutraContract[] = [];
+  const issues: SutraIssue[] = [];
+
+  for (const absPath of files) {
+    const parsed = parseContractFile(repoRoot, absPath);
+    issues.push(...parsed.issues);
+    if (parsed.contract) {
+      contracts.push(parsed.contract);
+    }
+  }
+
+  return { contracts, issues };
 }

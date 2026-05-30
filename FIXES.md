@@ -44,3 +44,9 @@ Two precision fixes so the flow view stops lying — done by Sonnet agents:
 - **brain-dashboard** `SettingsPage.jsx` + `ProviderToggle.jsx` — dead code with a broken import. Delete both, or wire + fix the path. (Code fix, not a Sutra fix.)
 - **echo-ai** `/api/upgrade-request` — implement on brain-api or leave (product call).
 - **brain-api** `/bot` template-literal external URL — needs an external-host allowlist (future).
+
+## Story 3.5 — Live watch mode (2026-05-30)
+
+- **`sutra watch [repoPath]`** — canonical live entry point. Starts viewer on `127.0.0.1`, initial scan, debounced re-scan via `chokidar`, pushes full graph over SSE `/events`.
+- **`scan --watch`** — still CLI-only re-scan (no viewer push); use `sutra watch` for live browser updates.
+- Dependency added: `chokidar` (FS watching with `.sutra` excluded to prevent feedback loop).

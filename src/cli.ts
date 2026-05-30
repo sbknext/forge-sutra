@@ -22,6 +22,7 @@ import {
 import { diffGraphs, formatDiffSummary, loadGraphFile, type SutraDiff } from "./diff.js";
 import { writeScaffolds, SCAFFOLD_KINDS } from "./scaffold.js";
 import { runScanPipeline, startWatch, type ScanTimings } from "./watch.js";
+import { runWatch } from "./watch-viewer.js";
 import { reconcileGraphs, buildReconcileOutput, type ReconcileOutput } from "./reconcile.js";
 import { migrateFile } from "./migrate.js";
 import { exportContracts, exportGraphSchema, exportIssues, writeExport } from "./export.js";
@@ -216,6 +217,39 @@ async function cmdScan(
     return result;
   })();
   printScanSummary(graph, graphPath);
+}
+
+// ── watch command (Story 3.5) ─────────────────────────────────────────────────
+
+async function cmdWatch(
+  repoPath: string | undefined,
+  opts: { port?: number },
+): Promise<void> {
+  const cwd = process.cwd();
+  const repoRoot = path.resolve(repoPath ?? cwd);
+
+  const handle = await runWatch(repoRoot, cwd, { port: opts.port });
+
+  console.log(chalk.bold(`\nSutra watch → ${repoRoot}\n`));
+  console.log(chalk.cyan(`  Viewer: ${handle.url}`));
+  console.log(chalk.gray("  Live re-scan on file change · Ctrl+C to stop.\n"));
+
+  if (process.platform === "darwin") {
+    try {
+      execSync(`open "${handle.url}"`, { stdio: "ignore" });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const onSigint = async (): Promise<void> => {
+    await handle.close();
+    console.log(chalk.gray("\n  Watch stopped.\n"));
+    process.exit(0);
+  };
+  process.on("SIGINT", () => {
+    void onSigint();
+  });
 }
 
 // ── diff command ──────────────────────────────────────────────────────────────
@@ -583,6 +617,17 @@ program
   .option("--port <n>", "Port to bind (default 4577)", (v) => parseInt(v, 10))
   .action(async (opts: { port?: number }) => {
     await cmdViewer(opts);
+  });
+
+program
+  .command("watch [repoPath]")
+  .description(
+    "Live watch: re-scan on file change and push graph to viewer SPA (SSE). " +
+    "Starts local viewer on 127.0.0.1. Static scan only — candidate results.",
+  )
+  .option("--port <n>", "Viewer port (default 4577)", (v) => parseInt(v, 10))
+  .action(async (repoPath: string | undefined, opts: { port?: number }) => {
+    await cmdWatch(repoPath, opts);
   });
 
 program

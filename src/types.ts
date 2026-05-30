@@ -1,7 +1,7 @@
 // graph.json contract — THE single source of truth. Every consumer reads this.
 // Phase 0. Keep ids stable + deterministic so future phases can diff scans.
 
-export const GRAPH_VERSION = 2;
+export const GRAPH_VERSION = 3;
 
 /**
  * How a graph element was derived:
@@ -99,11 +99,31 @@ export interface SutraIssue {
   provenance?: Provenance;
 }
 
+export type HealthBand = "green" | "amber" | "red";
+
+export interface FeatureHealthInput {
+  signal: string;
+  available: boolean;
+  weight: number;
+  penalty: number;
+  detail: string;
+}
+
+/** Heuristic structural health — not runtime correctness. */
+export interface FeatureHealth {
+  score: number;
+  band: HealthBand;
+  inputs: FeatureHealthInput[];
+  available_signals: string[];
+}
+
 export interface SutraFeature {
   id: string;
   label: string;
   node_ids: string[];
   issue_count: number;
+  /** Composite structural health score (heuristic, code-derived). */
+  health: FeatureHealth;
 }
 
 /** Author-declared endpoint from feature.sutra.md (intent, not ground truth). */

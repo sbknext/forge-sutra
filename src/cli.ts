@@ -81,6 +81,15 @@ function printScanSummary(graph: SutraGraph, outFile: string): void {
   );
   console.log(`  ${chalk.cyan(String(edges.length))} edges`);
   console.log(`  ${chalk.cyan(String(features.length))} features`);
+
+  const healthDist = { green: 0, amber: 0, red: 0 };
+  for (const f of features) {
+    const band = f.health?.band ?? "green";
+    if (band in healthDist) healthDist[band as keyof typeof healthDist]++;
+  }
+  console.log(
+    `  health: ${chalk.green(String(healthDist.green))} green · ${chalk.yellow(String(healthDist.amber))} amber · ${chalk.red(String(healthDist.red))} red (heuristic structural)`,
+  );
   console.log(`  commit: ${chalk.gray(graph.commit)}`);
   console.log();
 

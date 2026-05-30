@@ -65,12 +65,22 @@ export function exportGraphSchema(): string {
       },
       SutraFeature: {
         type: "object",
-        required: ["id", "label", "node_ids", "issue_count"],
+        required: ["id", "label", "node_ids", "issue_count", "health"],
         properties: {
           id: { type: "string" },
           label: { type: "string" },
           node_ids: { type: "array", items: { type: "string" } },
           issue_count: { type: "integer" },
+          health: {
+            type: "object",
+            required: ["score", "band", "inputs", "available_signals"],
+            properties: {
+              score: { type: "integer", minimum: 0, maximum: 100 },
+              band: { enum: ["green", "amber", "red"] },
+              inputs: { type: "array" },
+              available_signals: { type: "array", items: { type: "string" } },
+            },
+          },
         },
       },
       SutraContract: {

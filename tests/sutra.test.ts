@@ -16,7 +16,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { scan } from "../src/scanner.js";
 import { runChecks, checkContractDrift } from "../src/checks.js";
-import { buildFeatures } from "../src/features.js";
+import { buildFeatures, computeFeatureHealth, bandForScore, GREEN_MIN, AMBER_MIN } from "../src/features.js";
 import { loadContracts } from "../src/contracts.js";
 import { renderView } from "../src/view.js";
 import {
@@ -245,14 +245,14 @@ describe("buildFeatures", () => {
   it("returns at least one feature for the broken fixture", () => {
     const { nodes, edges } = scan(BROKEN);
     const issues = runChecks(nodes, edges);
-    const features = buildFeatures(nodes, issues);
+    const features = buildFeatures(nodes, issues, edges);
     expect(features.length).toBeGreaterThan(0);
   });
 
   it("every feature node_id is present in the nodes list (broken fixture)", () => {
     const { nodes, edges } = scan(BROKEN);
     const issues = runChecks(nodes, edges);
-    const features = buildFeatures(nodes, issues);
+    const features = buildFeatures(nodes, issues, edges);
     const nodeIdSet = new Set(nodes.map((n) => n.id));
     for (const feat of features) {
       for (const nid of feat.node_ids) {
@@ -267,7 +267,7 @@ describe("buildFeatures", () => {
   it("every feature node_id is present in the nodes list (clean fixture)", () => {
     const { nodes, edges } = scan(CLEAN);
     const issues = runChecks(nodes, edges);
-    const features = buildFeatures(nodes, issues);
+    const features = buildFeatures(nodes, issues, edges);
     const nodeIdSet = new Set(nodes.map((n) => n.id));
     for (const feat of features) {
       for (const nid of feat.node_ids) {
@@ -282,7 +282,7 @@ describe("buildFeatures", () => {
   it("feature issue_count matches the issues assigned to nodes in that feature (broken fixture)", () => {
     const { nodes, edges } = scan(BROKEN);
     const issues = runChecks(nodes, edges);
-    const features = buildFeatures(nodes, issues);
+    const features = buildFeatures(nodes, issues, edges);
     // For each feature, collect issue count from the issues array by feature field match
     for (const feat of features) {
       const relatedIssues = issues.filter((i) => i.feature === feat.id);
@@ -293,7 +293,7 @@ describe("buildFeatures", () => {
   it("feature ids are unique", () => {
     const { nodes, edges } = scan(BROKEN);
     const issues = runChecks(nodes, edges);
-    const features = buildFeatures(nodes, issues);
+    const features = buildFeatures(nodes, issues, edges);
     const ids = features.map((f) => f.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
@@ -301,7 +301,7 @@ describe("buildFeatures", () => {
   it("clean fixture features have issue_count === 0 for every feature", () => {
     const { nodes, edges } = scan(CLEAN);
     const issues = runChecks(nodes, edges);
-    const features = buildFeatures(nodes, issues);
+    const features = buildFeatures(nodes, issues, edges);
     for (const feat of features) {
       expect(feat.issue_count).toBe(0);
     }
@@ -603,8 +603,8 @@ describe("confidence & provenance (Story 1.3)", () => {
     "ai-inferred",
   ]);
 
-  it("GRAPH_VERSION is 2 after confidence schema bump", () => {
-    expect(GRAPH_VERSION).toBe(2);
+  it("GRAPH_VERSION is 3 after feature health schema bump", () => {
+    expect(GRAPH_VERSION).toBe(3);
   });
 
   it("runChecks issues have provenance in union and confidence in [0,1]", () => {
@@ -703,7 +703,7 @@ describe("confidence & provenance (Story 1.3)", () => {
   it("renderView degrades gracefully when confidence/provenance absent", () => {
     const { nodes, edges } = scan(CLEAN);
     const issues = runChecks(nodes, edges);
-    const features = buildFeatures(nodes, issues);
+    const features = buildFeatures(nodes, issues, edges);
     const legacyGraph = {
       version: 0,
       repo: "legacy",
@@ -718,5 +718,93 @@ describe("confidence & provenance (Story 1.3)", () => {
     expect(() => renderView(legacyGraph)).not.toThrow();
     const html = renderView(legacyGraph);
     expect(html).toContain("<!DOCTYPE html>");
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 15. FEATURE HEALTH — Story 2.4
+// ═════════════════════════════════════════════════════════════════════════════
+describe("feature health — clean fixture (Story 2.4)", () => {
+  it("zero-issue feature scores 100 / green", () => {
+    const { nodes, edges } = scan(CLEAN);
+    const issues = runChecks(nodes, edges);
+    const features = buildFeatures(nodes, issues, edges);
+    expect(features.length).toBeGreaterThan(0);
+    for (const feat of features) {
+      expect(feat.health.score).toBe(100);
+      expect(feat.health.band).toBe("green");
+      const issueInput = feat.health.inputs.find((i) => i.signal === "issue_load");
+      expect(issueInput?.available).toBe(true);
+      expect(issueInput?.penalty).toBe(0);
+    }
+  });
+
+  it("deterministic health across two buildFeatures runs", () => {
+    const { nodes, edges } = scan(CLEAN);
+    const issues = runChecks(nodes, edges);
+    const a = buildFeatures(nodes, issues, edges);
+    const b = buildFeatures(nodes, issues, edges);
+    expect(a.map((f) => f.health)).toEqual(b.map((f) => f.health));
+  });
+});
+
+describe("feature health — broken fixture (Story 2.4)", () => {
+  it("orphaned_endpoint drives score down with orphan_ratio penalty > 0", () => {
+    const { nodes, edges } = scan(BROKEN);
+    const issues = runChecks(nodes, edges);
+    const features = buildFeatures(nodes, issues, edges);
+    const libFeature = features.find((f) =>
+      f.node_ids.some((id) => id.includes("lib/client")),
+    );
+    expect(libFeature).toBeDefined();
+    expect(libFeature!.health.score).toBeLessThan(100);
+    const orphanInput = libFeature!.health.inputs.find((i) => i.signal === "orphan_ratio");
+    expect(orphanInput?.penalty).toBeGreaterThan(0);
+    expect(["amber", "red"]).toContain(libFeature!.health.band);
+  });
+});
+
+describe("feature health — band thresholds", () => {
+  it("boundary 49 → red, 50 → amber, 79 → amber, 80 → green", () => {
+    expect(bandForScore(49)).toBe("red");
+    expect(bandForScore(50)).toBe("amber");
+    expect(bandForScore(79)).toBe("amber");
+    expect(bandForScore(80)).toBe("green");
+    expect(GREEN_MIN).toBe(80);
+    expect(AMBER_MIN).toBe(50);
+  });
+});
+
+describe("feature health — optional signal gating", () => {
+  it("confidence/contract/coverage unavailable when data absent", () => {
+    const { nodes, edges } = scan(CLEAN);
+    const issues = runChecks(nodes, edges);
+    const features = buildFeatures(nodes, issues, edges);
+    const feat = features[0]!;
+    const optional = ["confidence", "contract_drift", "test_coverage"];
+    for (const sig of optional) {
+      const input = feat.health.inputs.find((i) => i.signal === sig);
+      expect(input?.available).toBe(false);
+      expect(input?.penalty).toBe(0);
+      expect(feat.health.available_signals).not.toContain(sig);
+    }
+    const alwaysOn = feat.health.inputs.filter((i) =>
+      ["issue_load", "orphan_ratio"].includes(i.signal),
+    );
+    expect(alwaysOn.every((i) => i.available)).toBe(true);
+  });
+});
+
+describe("feature health — schema guard", () => {
+  it("every feature has valid health score and band", () => {
+    const { nodes, edges } = scan(BROKEN);
+    const issues = runChecks(nodes, edges);
+    const features = buildFeatures(nodes, issues, edges);
+    for (const feat of features) {
+      expect(feat.health.score).toBeGreaterThanOrEqual(0);
+      expect(feat.health.score).toBeLessThanOrEqual(100);
+      expect(["green", "amber", "red"]).toContain(feat.health.band);
+      expect(Number.isInteger(feat.health.score)).toBe(true);
+    }
   });
 });

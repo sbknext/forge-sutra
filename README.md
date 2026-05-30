@@ -136,7 +136,7 @@ When `GRAPH_VERSION` bumps, run `forge-sutra migrate` on cached graphs before di
 
 ```jsonc
 {
-  "version": 2,           // GRAPH_VERSION constant; bump = breaking change
+  "version": 3,           // GRAPH_VERSION constant; bump = breaking change
   "repo": "my-repo",      // basename of the scanned directory
   "scanned_at": "...",    // ISO 8601 UTC timestamp
   "commit": "abc1234",    // short git hash, or "unknown"
@@ -199,9 +199,22 @@ When `GRAPH_VERSION` bumps, run `forge-sutra migrate` on cached graphs before di
   "id": "components",
   "label": "Components",
   "node_ids": ["..."],
-  "issue_count": 3
+  "issue_count": 3,
+  "health": {
+    "score": 72,
+    "band": "amber",
+    "inputs": [
+      { "signal": "issue_load", "available": true, "weight": 0.35, "penalty": 20, "detail": "..." },
+      { "signal": "orphan_ratio", "available": true, "weight": 0.35, "penalty": 15, "detail": "..." }
+    ],
+    "available_signals": ["issue_load", "orphan_ratio"]
+  }
 }
 ```
+
+### Feature health (heuristic)
+
+Each feature carries a **heuristic structural health score** (0–100) with band `green` / `amber` / `red`. This is derived from code structure (issue load, orphan ratio, and optional signals when available) — **not** runtime correctness or test pass/fail. The viewer labels this explicitly so it is never read as a bug-free guarantee.
 
 ---
 

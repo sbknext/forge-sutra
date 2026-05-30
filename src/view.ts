@@ -59,7 +59,21 @@ function mermaidShape(type: string): [string, string] {
   }
 }
 
-/** Badge color based on issue severity set. */
+/** Badge color from structural health band (heuristic). */
+function healthBadgeClass(band: string): string {
+  switch (band) {
+    case "green":
+      return "badge-health-green";
+    case "amber":
+      return "badge-health-amber";
+    case "red":
+      return "badge-health-red";
+    default:
+      return "badge-ok";
+  }
+}
+
+/** Fallback badge color based on issue severity set. */
 function badgeClass(issues: SutraIssue[]): string {
   if (issues.length === 0) return "badge-ok";
   if (issues.some((i) => i.severity === "error")) return "badge-error";
@@ -263,14 +277,17 @@ export function renderView(
       const issues = issuesByFeature.get(feat.id) ?? [];
       const nodeIds = new Set(feat.node_ids);
       const ec = edgeCount(graph, nodeIds);
-      const cls = badgeClass(issues);
+      const healthBand = feat.health?.band ?? (issues.length === 0 ? "green" : issues.some((i) => i.severity === "error") ? "red" : "amber");
+      const hcls = healthBadgeClass(healthBand);
+      const healthScore = feat.health?.score ?? 0;
       return `
 <div class="card" data-feature="${esc(feat.id)}" tabindex="0" role="button" aria-expanded="false">
   <div class="card-header">
     <span class="card-label">${esc(feat.label)}</span>
-    <span class="badge ${cls}">${feat.issue_count} issue${feat.issue_count !== 1 ? "s" : ""}</span>
+    <span class="badge ${hcls}" title="Heuristic structural health score">${healthScore} · ${esc(healthBand)}</span>
   </div>
-  <div class="card-meta">${feat.node_ids.length} node${feat.node_ids.length !== 1 ? "s" : ""} &middot; ${ec} edge${ec !== 1 ? "s" : ""}</div>
+  <div class="card-meta">${feat.node_ids.length} node${feat.node_ids.length !== 1 ? "s" : ""} &middot; ${ec} edge${ec !== 1 ? "s" : ""} &middot; ${feat.issue_count} issue${feat.issue_count !== 1 ? "s" : ""}</div>
+  <div class="card-health-note">Heuristic structural health score — not runtime correctness</div>
 </div>`;
     })
     .join("\n");
@@ -316,6 +333,10 @@ header .counts span { background: #334155; padding: 0.15rem 0.6rem; border-radiu
 .badge-ok { background: #dcfce7; color: #166534; }
 .badge-warn { background: #fef9c3; color: #854d0e; }
 .badge-error { background: #fee2e2; color: #991b1b; }
+.badge-health-green { background: #dcfce7; color: #166534; }
+.badge-health-amber { background: #fef9c3; color: #854d0e; }
+.badge-health-red { background: #fee2e2; color: #991b1b; }
+.card-health-note { font-size: 0.68rem; color: #94a3b8; margin-top: 0.35rem; font-style: italic; }
 .card-meta { font-size: 0.78rem; color: #64748b; }
 .detail-panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 1.25rem; }
 .detail-panel h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 0.3rem; }

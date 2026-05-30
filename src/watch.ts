@@ -109,7 +109,7 @@ export function runScanPipeline(
   const hookIssues = runPostScanHooks(repoRoot, graphPathForHooks);
   issues = [...issues, ...hookIssues];
   graph.issues = issues;
-  graph.features = buildFeatures(nodes, issues);
+  graph.features = buildFeatures(nodes, issues, edges, { contracts });
 
   fs.writeFileSync(graphPathForHooks, JSON.stringify(graph, null, 2), "utf8");
   timings.writeMs = performance.now() - writeStart;

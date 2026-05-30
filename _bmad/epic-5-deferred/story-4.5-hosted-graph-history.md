@@ -1,3 +1,5 @@
+> ⛔ **DEFERRED — DO NOT IMPLEMENT.** Out of scope (breaks single-repo / standalone / local-first). See [Epic 5 README](README.md). Build this only on an explicit owner decision.
+
 # Story 4.5: Graph History & Trends
 
 - **Epic:** Epic 4 — Ecosystem & SDK

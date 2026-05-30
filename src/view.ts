@@ -1,5 +1,6 @@
 import type { SutraGraph, SutraFeature, SutraIssue, Severity } from "./types.js";
 import type { SutraDiff } from "./diff.js";
+import type { ReconcileOutput } from "./reconcile.js";
 import { formatDiffSummary } from "./diff.js";
 
 /** Escape text for safe HTML insertion. */
@@ -110,6 +111,30 @@ function diffHasChanges(diff: SutraDiff): boolean {
   );
 }
 
+/** Build reconcile summary panel — display-only, candidate. */
+function buildReconcilePanel(reconcile: ReconcileOutput): string {
+  if (!reconcile) return "";
+
+  const orphanRows = reconcile.issues
+    .map(
+      (iss) =>
+        `<li class="issue issue-${esc(iss.severity)}"><span class="sev">${esc(iss.severity.toUpperCase())}</span> ${esc(iss.message)}</li>`,
+    )
+    .join("\n");
+
+  return `
+<section class="reconcile-panel">
+  <h2>Cross-repo reconcile</h2>
+  <p class="reconcile-meta">
+    Client: <code>${esc(reconcile.client_repo)}</code> &rarr;
+    Server: <code>${esc(reconcile.server_repo)}</code>
+    &mdash; ${reconcile.matched}/${reconcile.checked} matched.
+    Static match only (heuristic / candidate).
+  </p>
+  ${reconcile.issues.length > 0 ? `<ul class="issue-list">${orphanRows}</ul>` : '<p class="no-issues">No cross-repo orphans.</p>'}
+</section>`;
+}
+
 /** Build contract drift panel — display-only, heuristic. */
 function buildContractDriftPanel(graph: SutraGraph): string {
   if (graph.contracts.length === 0) return "";
@@ -210,7 +235,11 @@ function buildDetailPanel(graph: SutraGraph, feature: SutraFeature, featureIssue
 </div>`;
 }
 
-export function renderView(graph: SutraGraph, diff?: SutraDiff): string {
+export function renderView(
+  graph: SutraGraph,
+  diff?: SutraDiff,
+  reconcile?: ReconcileOutput,
+): string {
   const totalNodes = graph.nodes.length;
   const totalEdges = graph.edges.length;
   const totalIssues = graph.issues.length;
@@ -255,6 +284,7 @@ export function renderView(graph: SutraGraph, diff?: SutraDiff): string {
   const graphJson = JSON.stringify(graph);
   const diffPanel = diff ? buildDiffPanel(diff) : "";
   const contractDriftPanel = buildContractDriftPanel(graph);
+  const reconcilePanel = reconcile ? buildReconcilePanel(reconcile) : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -307,7 +337,9 @@ header .counts span { background: #334155; padding: 0.15rem 0.6rem; border-radiu
 .contract-drift-panel h2 { font-size: 1rem; font-weight: 700; margin-bottom: 0.35rem; }
 .drift-meta { font-size: 0.8rem; color: #64748b; margin-bottom: 0.75rem; }
 .drift-group { margin-bottom: 0.75rem; font-size: 0.82rem; }
-.drift-group .source { color: #64748b; font-weight: 400; font-size: 0.78rem; }
+.reconcile-panel { background: #fff; border: 1px solid #cbd5e1; border-left: 4px solid #8b5cf6; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.25rem; }
+.reconcile-panel h2 { font-size: 1rem; font-weight: 700; margin-bottom: 0.35rem; }
+.reconcile-meta { font-size: 0.8rem; color: #64748b; margin-bottom: 0.75rem; }
 </style>
 </head>
 <body>
@@ -332,6 +364,8 @@ header .counts span { background: #334155; padding: 0.15rem 0.6rem; border-radiu
 ${diffPanel}
 
 ${contractDriftPanel}
+
+${reconcilePanel}
 
 <div class="grid" id="feature-grid">
 ${cards}

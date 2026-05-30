@@ -11,6 +11,32 @@ export interface ReconcileResult {
   matched: number;
 }
 
+export const RECONCILE_VERSION = 0;
+
+export interface ReconcileOutput {
+  reconcile_version: number;
+  client_repo: string;
+  server_repo: string;
+  checked: number;
+  matched: number;
+  issues: SutraIssue[];
+}
+
+export function buildReconcileOutput(
+  client: SutraGraph,
+  server: SutraGraph,
+  result: ReconcileResult,
+): ReconcileOutput {
+  return {
+    reconcile_version: RECONCILE_VERSION,
+    client_repo: client.repo,
+    server_repo: server.repo,
+    checked: result.checked,
+    matched: result.matched,
+    issues: result.issues,
+  };
+}
+
 function normalisePath(p: string): string {
   return p.toLowerCase().replace(/\/+$/, "") || "/";
 }

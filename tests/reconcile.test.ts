@@ -6,7 +6,7 @@ import { describe, it, expect } from "vitest";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { reconcileGraphs, extractClientCalls } from "../src/reconcile.js";
+import { reconcileGraphs, extractClientCalls, buildReconcileOutput, RECONCILE_VERSION } from "../src/reconcile.js";
 import type { SutraGraph } from "../src/types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -62,5 +62,15 @@ describe("reconcileGraphs — SUTRA-6.1", () => {
     const result = reconcileGraphs(client, serverFull);
     expect(result.issues).toHaveLength(0);
     expect(result.matched).toBe(2);
+  });
+
+  it("buildReconcileOutput produces reconcile_version 0 JSON (SUTRA-11.2)", () => {
+    const result = reconcileGraphs(client, server);
+    const output = buildReconcileOutput(client, server, result);
+    expect(output.reconcile_version).toBe(RECONCILE_VERSION);
+    expect(output.client_repo).toBe("client-app");
+    expect(output.server_repo).toBe("server-api");
+    expect(output.checked).toBe(2);
+    expect(output.issues.length).toBeGreaterThan(0);
   });
 });

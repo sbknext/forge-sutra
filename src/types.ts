@@ -96,6 +96,7 @@ export const GRAPH_FILE = "graph.json";
 export const GRAPH_PREV_FILE = "graph.prev.json";
 export const DIFF_FILE = "diff.json";
 export const VIEW_FILE = "view.html";
+export const RECONCILE_FILE = "reconcile.json";
 
 /** Directories never scanned. */
 export const EXCLUDED_DIRS = new Set([

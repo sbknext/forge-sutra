@@ -13,10 +13,12 @@ import { loadContracts } from "../src/contracts.js";
 import { checkContractDrift, runChecks } from "../src/checks.js";
 import { buildFeatures } from "../src/features.js";
 import { GRAPH_VERSION, type SutraGraph } from "../src/types.js";
+import { buildReconcileOutput, reconcileGraphs } from "../src/reconcile.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = path.resolve(__dirname, "fixtures/diff");
 const CONTRACT_DECLARED = path.resolve(__dirname, "fixtures/contract-declared");
+const RECONCILE_DIR = path.resolve(__dirname, "fixtures/reconcile");
 const GRAPH_A = path.join(FIXTURE_DIR, "graph-a.json");
 const GRAPH_B = path.join(FIXTURE_DIR, "graph-b.json");
 
@@ -103,6 +105,34 @@ describe("renderView — contract drift panel (SUTRA-11.1)", () => {
     const html = renderView(graph);
     expect(html).not.toContain("Contract drift");
     expect(html).not.toMatch(/<section class="contract-drift-panel"/);
+  });
+});
+
+describe("renderView — reconcile panel (SUTRA-11.2)", () => {
+  it("shows reconcile panel when reconcile output provided", () => {
+    const client = JSON.parse(
+      fs.readFileSync(path.join(RECONCILE_DIR, "client-graph.json"), "utf8"),
+    ) as SutraGraph;
+    const server = JSON.parse(
+      fs.readFileSync(path.join(RECONCILE_DIR, "server-graph.json"), "utf8"),
+    ) as SutraGraph;
+    const result = reconcileGraphs(client, server);
+    const reconcile = buildReconcileOutput(client, server, result);
+    const graph = readGraph(GRAPH_B);
+
+    const html = renderView(graph, undefined, reconcile);
+    expect(html).toContain("Cross-repo reconcile");
+    expect(html).toContain("reconcile-panel");
+    expect(html).toContain("client-app");
+    expect(html).toContain("server-api");
+    expect(html).toContain("heuristic");
+    expect(html).toContain("POST /api/missing");
+  });
+
+  it("omits reconcile panel when not provided", () => {
+    const html = renderView(readGraph(GRAPH_B));
+    expect(html).not.toContain("Cross-repo reconcile");
+    expect(html).not.toMatch(/<section class="reconcile-panel"/);
   });
 });
 

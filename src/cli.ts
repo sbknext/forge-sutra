@@ -17,14 +17,14 @@ import {
   GRAPH_PREV_FILE,
   DIFF_FILE,
   VIEW_FILE,
-  type SutraGraph,
+  RECONCILE_FILE,
 } from "./types.js";
 import { diffGraphs, formatDiffSummary, loadGraphFile, type SutraDiff } from "./diff.js";
 import { writeScaffolds, SCAFFOLD_KINDS } from "./scaffold.js";
 import { runScanPipeline, startWatch, type ScanTimings } from "./watch.js";
-import { reconcileGraphs } from "./reconcile.js";
+import { reconcileGraphs, buildReconcileOutput, type ReconcileOutput } from "./reconcile.js";
 import { migrateFile } from "./migrate.js";
-import type { IssueKind } from "./types.js";
+import type { IssueKind, SutraGraph } from "./types.js";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -207,7 +207,7 @@ function cmdDiff(
 
 // ── reconcile command ─────────────────────────────────────────────────────────
 
-function cmdReconcile(opts: { client: string; server: string }): void {
+function cmdReconcile(opts: { client: string; server: string; out?: string }): void {
   let clientGraph: SutraGraph;
   let serverGraph: SutraGraph;
   try {
@@ -219,6 +219,7 @@ function cmdReconcile(opts: { client: string; server: string }): void {
   }
 
   const result = reconcileGraphs(clientGraph, serverGraph);
+  const output = buildReconcileOutput(clientGraph, serverGraph, result);
 
   console.log(chalk.bold(`\nSutra reconcile — candidate cross-repo match\n`));
   console.log(`  Client: ${chalk.cyan(clientGraph.repo)} (${opts.client})`);
@@ -234,7 +235,15 @@ function cmdReconcile(opts: { client: string; server: string }): void {
       console.log(`    · ${iss.node}: ${iss.message}`);
     }
   }
-  console.log();
+
+  if (opts.out) {
+    const outPath = path.resolve(opts.out);
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    fs.writeFileSync(outPath, JSON.stringify(output, null, 2), "utf8");
+    console.log(chalk.gray(`\n  Wrote ${outPath}\n`));
+  } else {
+    console.log();
+  }
 }
 
 // ── scaffold command ──────────────────────────────────────────────────────────
@@ -329,7 +338,17 @@ function cmdView(): void {
     }
   }
 
-  const html = renderView(graph, diff);
+  let reconcile: ReconcileOutput | undefined;
+  const reconcileFile = path.join(sutraDir(cwd), RECONCILE_FILE);
+  if (fs.existsSync(reconcileFile)) {
+    try {
+      reconcile = JSON.parse(fs.readFileSync(reconcileFile, "utf8")) as ReconcileOutput;
+    } catch {
+      console.warn(chalk.yellow(`  Warning: could not read ${reconcileFile}; skipping reconcile panel.`));
+    }
+  }
+
+  const html = renderView(graph, diff, reconcile);
   const viewFile = viewFilePath(cwd);
   fs.writeFileSync(viewFile, html, "utf8");
   console.log(chalk.bold(`\nView written → ${viewFile}`));
@@ -435,7 +454,8 @@ program
   )
   .requiredOption("--client <graph>", "Path to client graph.json")
   .requiredOption("--server <graph>", "Path to server graph.json")
-  .action((opts: { client: string; server: string }) => {
+  .option("--out <file>", "Write reconcile JSON (e.g. .sutra/reconcile.json)")
+  .action((opts: { client: string; server: string; out?: string }) => {
     cmdReconcile(opts);
   });
 

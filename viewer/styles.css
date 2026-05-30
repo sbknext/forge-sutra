@@ -45,4 +45,11 @@ header .counts span { background: #334155; padding: 0.15rem 0.6rem; border-radiu
 .badge-no-contract { background: #f1f5f9; color: #64748b; font-size: 0.65rem; }
 .badge-contract { background: #dbeafe; color: #1e40af; font-size: 0.65rem; }
 .health-filter { font-size: 0.82rem; display: inline-flex; gap: 0.5rem; flex-wrap: wrap; }
+.flow-path { margin-bottom: 0.75rem; font-size: 0.82rem; }
+.drilldown-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.drill-section { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+.cy-root { height: 360px; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 1rem; background: #f8fafc; }
+.edge-legend { display: flex; gap: 0.75rem; flex-wrap: wrap; font-size: 0.75rem; margin-bottom: 0.5rem; }
+.edge-legend i { display: inline-block; width: 12px; height: 3px; margin-right: 4px; vertical-align: middle; }
+.node-detail { background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.82rem; }
 .filter-chip { cursor: pointer; }

@@ -6,8 +6,11 @@
 <title>Sutra Viewer</title>
 <link rel="stylesheet" href="/styles.css">
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cytoscape@3.28.1/cytoscape.min.js"></script>
 </head>
 <body>
+
+<div id="view-grid">
 
 <header id="app-header">
   <h1>Sutra Viewer</h1>
@@ -38,8 +41,12 @@
 <div class="grid" id="feature-grid"></div>
 
 <div id="detail-root"></div>
+</div>
+
+<div id="view-drilldown" class="hidden"></div>
 
 <script>window.SUTRA_GRAPH_VERSION = __GRAPH_VERSION__;</script>
+<script src="/drilldown.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

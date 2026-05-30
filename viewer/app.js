@@ -389,6 +389,7 @@
           );
         }
         renderGraph(graph);
+        handleRoute();
       })
       .catch(function (err) {
         showError(String(err.message || err));
@@ -419,24 +420,34 @@
     }
   }
 
+  function showGridView() {
+    document.getElementById("view-grid").classList.remove("hidden");
+    document.getElementById("view-drilldown").classList.add("hidden");
+    location.hash = "";
+  }
+
+  function showDrilldown(featureId) {
+    document.getElementById("view-grid").classList.add("hidden");
+    var dd = document.getElementById("view-drilldown");
+    dd.classList.remove("hidden");
+    if (window.SutraDrilldown && currentGraph) {
+      window.SutraDrilldown.render(dd, currentGraph, featureId, showGridView);
+    }
+  }
+
+  function handleRoute() {
+    var hash = location.hash.replace(/^#/, "");
+    if (hash.indexOf("feature=") === 0 && currentGraph) {
+      showDrilldown(decodeURIComponent(hash.slice(8)));
+    } else {
+      showGridView();
+    }
+  }
+
   function toggleCard(card) {
     var featureId = card.getAttribute("data-feature");
     location.hash = "feature=" + encodeURIComponent(featureId);
-    var panel = document.getElementById("detail-" + featureId);
-    if (!panel) return;
-
-    var isVisible = panel.style.display !== "none";
-    if (isVisible && activeCard === card) {
-      panel.style.display = "none";
-      card.classList.remove("active");
-      card.setAttribute("aria-expanded", "false");
-      activeCard = null;
-    } else {
-      showDetail(featureId);
-      card.classList.add("active");
-      card.setAttribute("aria-expanded", "true");
-      activeCard = card;
-    }
+    handleRoute();
   }
 
   function wireCards() {
@@ -464,6 +475,8 @@
     mermaid.initialize({ startOnLoad: false, theme: "neutral", securityLevel: "loose" });
   }
 
+  window.addEventListener("hashchange", handleRoute);
+
   loadGraph();
 
   /* Story 3.5 — live push via SSE when /events is available */
@@ -475,6 +488,7 @@
           var graph = JSON.parse(ev.data);
           if (graph.version === GRAPH_VERSION) {
             renderGraph(graph);
+            handleRoute();
             document.getElementById("live-status").textContent = "Live · updated " + graph.scanned_at;
           }
         } catch (_) {

@@ -1,6 +1,6 @@
 {
   "name": "forge-sutra",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Static structural graph tool for JS/TS repos. Writes graph.json + HTML view + drift checks. v1.1.",
   "type": "module",
   "bin": {

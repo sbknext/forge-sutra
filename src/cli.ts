@@ -25,9 +25,18 @@ import { runScanPipeline, startWatch, type ScanTimings } from "./watch.js";
 import { reconcileGraphs, buildReconcileOutput, type ReconcileOutput } from "./reconcile.js";
 import { migrateFile } from "./migrate.js";
 import { exportContracts, exportGraphSchema, exportIssues, writeExport } from "./export.js";
-import type { IssueKind, SutraGraph } from "./types.js";
+import type { IssueKind, SutraGraph, SutraIssue } from "./types.js";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
+
+/** Format severity + optional provenance/confidence for CLI issue lines. */
+function formatIssueBadge(iss: SutraIssue): string {
+  const sev = iss.severity.toUpperCase();
+  if (iss.provenance !== undefined && iss.confidence !== undefined) {
+    return `[${sev} · ${iss.provenance} · ${iss.confidence.toFixed(2)}]`;
+  }
+  return `[${sev}]`;
+}
 
 function getCommit(repoRoot: string): string {
   try {
@@ -96,7 +105,8 @@ function printScanSummary(graph: SutraGraph, outFile: string): void {
             : chalk.blue(`[${(sev ?? "").toUpperCase()}]`);
       console.log(`  ${label} ${chalk.bold(kind ?? "")} (${group.length})`);
       for (const iss of group.slice(0, 5)) {
-        console.log(`    · ${iss.feature}: ${iss.message}`);
+        const badge = formatIssueBadge(iss);
+        console.log(`    · ${badge} ${iss.feature}: ${iss.message}`);
       }
       if (group.length > 5) {
         console.log(`    … and ${group.length - 5} more`);

@@ -13,6 +13,19 @@ function esc(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
+/** Build issue list item with optional provenance/confidence chip. */
+function formatIssueRow(iss: SutraIssue): string {
+  const lowConf =
+    iss.provenance === "template-prefix" ||
+    (iss.confidence !== undefined && iss.confidence < 0.7);
+  const extraClass = lowConf ? " issue-low-confidence" : "";
+  const chip =
+    iss.provenance !== undefined && iss.confidence !== undefined
+      ? `<span class="prov-chip">${esc(iss.provenance)} · ${iss.confidence.toFixed(2)}</span> `
+      : "";
+  return `<li class="issue issue-${esc(iss.severity)}${extraClass}"><span class="sev">${esc(iss.severity.toUpperCase())}</span> ${chip}${esc(iss.message)}</li>`;
+}
+
 /**
  * Sanitize a label for use inside a Mermaid flowchart.
  * Mermaid breaks on: ( ) { } [ ] " ' < > ; #
@@ -116,10 +129,7 @@ function buildReconcilePanel(reconcile: ReconcileOutput): string {
   if (!reconcile) return "";
 
   const orphanRows = reconcile.issues
-    .map(
-      (iss) =>
-        `<li class="issue issue-${esc(iss.severity)}"><span class="sev">${esc(iss.severity.toUpperCase())}</span> ${esc(iss.message)}</li>`,
-    )
+    .map((iss) => formatIssueRow(iss))
     .join("\n");
 
   return `
@@ -154,10 +164,7 @@ function buildContractDriftPanel(graph: SutraGraph): string {
       const contract = graph.contracts.find((c) => c.feature === feature);
       const source = contract?.file ?? "unknown";
       const rows = issues
-        .map(
-          (iss) =>
-            `<li class="issue issue-${esc(iss.severity)}"><span class="sev">${esc(iss.severity.toUpperCase())}</span> ${esc(iss.message)}</li>`,
-        )
+        .map((iss) => formatIssueRow(iss))
         .join("\n");
       return `<div class="drift-group"><strong>${esc(feature)}</strong> <span class="source">(${esc(source)})</span><ul class="issue-list">${rows}</ul></div>`;
     })
@@ -217,12 +224,7 @@ function buildDetailPanel(graph: SutraGraph, feature: SutraFeature, featureIssue
 
   const mermaidSrc = buildMermaid(graph, cappedIds, truncated);
 
-  const issueRows = featureIssues
-    .map(
-      (iss) =>
-        `<li class="issue issue-${esc(iss.severity)}"><span class="sev">${esc(iss.severity.toUpperCase())}</span> ${esc(iss.message)}</li>`
-    )
-    .join("\n");
+  const issueRows = featureIssues.map((iss) => formatIssueRow(iss)).join("\n");
 
   return `
 <div class="detail-panel" id="detail-${esc(feature.id)}" style="display:none">
@@ -325,6 +327,9 @@ header .counts span { background: #334155; padding: 0.15rem 0.6rem; border-radiu
 .issue-error { background: #fee2e2; color: #7f1d1d; }
 .issue-warn { background: #fef9c3; color: #713f12; }
 .issue-info { background: #e0f2fe; color: #0c4a6e; }
+.issue-low-confidence { opacity: 0.85; border-left: 3px solid #94a3b8; }
+.prov-chip { font-size: 0.72rem; font-weight: 600; color: #64748b; background: #f1f5f9; padding: 0.1rem 0.35rem; border-radius: 3px; margin-right: 0.25rem; }
+.issue-low-confidence .prov-chip { color: #92400e; background: #fef3c7; }
 .sev { font-weight: 700; margin-right: 0.4rem; }
 .no-issues { font-size: 0.82rem; color: #16a34a; }
 .diff-panel { background: #fff; border: 1px solid #cbd5e1; border-left: 4px solid #6366f1; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.25rem; }

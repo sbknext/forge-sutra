@@ -8,6 +8,7 @@ import {
   type SutraNode,
   type SutraEdge,
   type NodeType,
+  type Provenance,
 } from "./types.js";
 import { makeNodeId, relPosix, httpTargetId } from "./util/ids.js";
 import { loadExternalHosts } from "./external-hosts.js";
@@ -468,11 +469,7 @@ export function scan(repoRoot: string): { nodes: SutraNode[]; edges: SutraEdge[]
                   }
                 }
               }
-              edges.push({
-                from: enclosingId,
-                to: httpTargetId(method, urlParts.path, urlParts.host),
-                kind: "http",
-              });
+              pushHttpEdge(edges, enclosingId, method, urlParts);
             }
           }
 
@@ -489,11 +486,7 @@ export function scan(repoRoot: string): { nodes: SutraNode[]; edges: SutraEdge[]
               const urlParts = urlArg ? extractUrlParts(urlArg) : null;
               if (urlParts !== null) {
                 const method = meth === "request" ? "GET" : meth.toUpperCase();
-                edges.push({
-                  from: enclosingId,
-                  to: httpTargetId(method, urlParts.path, urlParts.host),
-                  kind: "http",
-                });
+                pushHttpEdge(edges, enclosingId, method, urlParts);
               }
             }
           }
@@ -506,7 +499,7 @@ export function scan(repoRoot: string): { nodes: SutraNode[]; edges: SutraEdge[]
             Node.isObjectLiteralExpression(args[0])
           ) {
             const obj = args[0];
-            let urlParts: { path: string; host: string | null } | null = null;
+            let urlParts: UrlExtract | null = null;
             let method = "GET";
 
             for (const prop of obj.getProperties()) {
@@ -520,11 +513,7 @@ export function scan(repoRoot: string): { nodes: SutraNode[]; edges: SutraEdge[]
               }
             }
             if (urlParts !== null) {
-              edges.push({
-                from: enclosingId,
-                to: httpTargetId(method, urlParts.path, urlParts.host),
-                kind: "http",
-              });
+              pushHttpEdge(edges, enclosingId, method, urlParts);
             }
           }
 
@@ -563,6 +552,15 @@ export function scan(repoRoot: string): { nodes: SutraNode[]; edges: SutraEdge[]
   // ── Pass 3: detect proxy/rewrite config and emit PROXY nodes ─────────────
   detectProxyNodes(absRoot, nodes);
   detectExternalHostNodes(absRoot, nodes);
+
+  // Annotate provenance on nodes: AST-resolved symbols vs synthetic registry nodes.
+  for (const n of nodes) {
+    if (n.name.startsWith("PROXY ") || n.name.startsWith("EXTERNAL ")) {
+      n.provenance = "heuristic";
+    } else {
+      n.provenance = "ast-exact";
+    }
+  }
 
   return { nodes, edges };
 }
@@ -697,18 +695,38 @@ function detectExternalHostNodes(absRoot: string, nodes: SutraNode[]): void {
 
 // ── URL literal extractor ─────────────────────────────────────────────────────
 // Returns path + optional host for absolute URLs. Local paths have host null.
-function extractUrlParts(node: Node): { path: string; host: string | null } | null {
+interface UrlExtract {
+  path: string;
+  host: string | null;
+  provenance: Provenance;
+}
+
+function pushHttpEdge(
+  edges: SutraEdge[],
+  from: string,
+  method: string,
+  urlParts: UrlExtract,
+): void {
+  edges.push({
+    from,
+    to: httpTargetId(method, urlParts.path, urlParts.host),
+    kind: "http",
+    provenance: urlParts.provenance,
+  });
+}
+
+function extractUrlParts(node: Node): UrlExtract | null {
   if (Node.isStringLiteral(node)) {
     const val = node.getLiteralValue();
     if (val.startsWith("http://") || val.startsWith("https://")) {
       try {
         const u = new URL(val);
-        return { path: u.pathname || "/", host: u.hostname.toLowerCase() };
+        return { path: u.pathname || "/", host: u.hostname.toLowerCase(), provenance: "ast-exact" };
       } catch {
         return null;
       }
     }
-    if (val.startsWith("/")) return { path: val, host: null };
+    if (val.startsWith("/")) return { path: val, host: null, provenance: "ast-exact" };
     return null;
   }
   // Template literal: static head + :dynamic per ${...} span + trailing literals
@@ -717,7 +735,7 @@ function extractUrlParts(node: Node): { path: string; host: string | null } | nu
     if (head && head.startsWith("http")) {
       try {
         const u = new URL(head);
-        return { path: u.pathname || "/", host: u.hostname.toLowerCase() };
+        return { path: u.pathname || "/", host: u.hostname.toLowerCase(), provenance: "template-prefix" };
       } catch {
         return null;
       }
@@ -728,18 +746,22 @@ function extractUrlParts(node: Node): { path: string; host: string | null } | nu
         pathPattern += ":dynamic";
         pathPattern += span.getLiteral().getLiteralText();
       }
-      return { path: pathPattern.replace(/\/+$/, "") || "/", host: null };
+      return {
+        path: pathPattern.replace(/\/+$/, "") || "/",
+        host: null,
+        provenance: "template-prefix",
+      };
     }
     return null;
   }
   // No-sub template literal
   if (node.getKind() === SyntaxKind.NoSubstitutionTemplateLiteral) {
     const text = node.getText().slice(1, -1); // strip backticks
-    if (text.startsWith("/")) return { path: text, host: null };
+    if (text.startsWith("/")) return { path: text, host: null, provenance: "ast-exact" };
     if (text.startsWith("http://") || text.startsWith("https://")) {
       try {
         const u = new URL(text);
-        return { path: u.pathname || "/", host: u.hostname.toLowerCase() };
+        return { path: u.pathname || "/", host: u.hostname.toLowerCase(), provenance: "ast-exact" };
       } catch {
         return null;
       }

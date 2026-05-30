@@ -4,7 +4,8 @@
  * These are approximations to guide human review, not definitive bug reports.
  */
 
-import type { SutraNode, SutraEdge, SutraIssue, SutraContract } from "./types.js";
+import type { SutraNode, SutraEdge, SutraIssue, SutraContract, Provenance } from "./types.js";
+import { confidenceForProvenance } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -215,12 +216,15 @@ function checkOrphanedEndpoints(
 
     if (!matched) {
       seen.add(dedupeKey);
+      const provenance: Provenance = edge.provenance ?? "heuristic";
       issues.push({
         severity: "error",
         kind: "orphaned_endpoint",
         node: `${method} ${path}`,
         feature: featureOf(nodeMap, edge.from),
         message: `Client calls ${method} ${path} but no route handler defines it.`,
+        provenance,
+        confidence: confidenceForProvenance(provenance),
       });
     }
   }
@@ -291,6 +295,8 @@ function checkMissingHandlers(
       node: edge.to,
       feature: featureOf(nodeMap, edge.from),
       message: `${edge.to} references handler/symbol that does not exist in the repo.`,
+      provenance: "ast-exact",
+      confidence: confidenceForProvenance("ast-exact"),
     });
   }
 
@@ -333,6 +339,8 @@ function checkDanglingTestRefs(
       node: edge.to,
       feature: featureOf(nodeMap, edge.from),
       message: `Test references '${edge.to}' which no longer exists in the repo.`,
+      provenance: "ast-exact",
+      confidence: confidenceForProvenance("ast-exact"),
     });
   }
 

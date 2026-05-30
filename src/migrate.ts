@@ -8,6 +8,7 @@ import { GRAPH_VERSION, type SutraGraph } from "./types.js";
 
 export const SUPPORTED_MIGRATIONS: Array<{ from: number; to: number }> = [
   { from: 0, to: 1 },
+  { from: 1, to: 2 },
 ];
 
 /** Migrate a graph object in-memory. Returns migrated graph. */
@@ -31,6 +32,12 @@ export function migrateGraph(raw: Record<string, unknown>): SutraGraph {
     }
     raw.version = 1;
     version = 1;
+  }
+
+  // v1 → v2: confidence/provenance are optional on nodes/edges/issues — structure unchanged
+  if (version === 1) {
+    raw.version = 2;
+    version = 2;
   }
 
   if (version !== GRAPH_VERSION) {

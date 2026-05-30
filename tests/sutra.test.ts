@@ -18,7 +18,15 @@ import { scan } from "../src/scanner.js";
 import { runChecks, checkContractDrift } from "../src/checks.js";
 import { buildFeatures } from "../src/features.js";
 import { loadContracts } from "../src/contracts.js";
-import type { SutraNode, SutraEdge, SutraIssue } from "../src/types.js";
+import { renderView } from "../src/view.js";
+import {
+  GRAPH_VERSION,
+  CONFIDENCE,
+  type SutraNode,
+  type SutraEdge,
+  type SutraIssue,
+  type Provenance,
+} from "../src/types.js";
 
 // ── path helpers ──────────────────────────────────────────────────────────────
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -32,6 +40,7 @@ const DYNAMIC_MISMATCH = path.resolve(__dirname, "fixtures/dynamic-mismatch");
 const CONTRACT_DECLARED = path.resolve(__dirname, "fixtures/contract-declared");
 const CONTRACT_CLEAN = path.resolve(__dirname, "fixtures/contract-clean");
 const CONTRACT_PARSE_ERROR = path.resolve(__dirname, "fixtures/contract-parse-error");
+const TEMPLATE_URL = path.resolve(__dirname, "fixtures/template-url");
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 function sortedIds(nodes: SutraNode[]): string[] {
@@ -580,5 +589,134 @@ describe("loadContracts — clean fixture (no contract file)", () => {
     const { contracts, issues } = loadContracts(CLEAN);
     expect(contracts).toHaveLength(0);
     expect(issues).toHaveLength(0);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 14. CONFIDENCE & PROVENANCE — Story 1.3
+// ═════════════════════════════════════════════════════════════════════════════
+describe("confidence & provenance (Story 1.3)", () => {
+  const VALID_PROVENANCE = new Set<Provenance>([
+    "ast-exact",
+    "heuristic",
+    "template-prefix",
+    "ai-inferred",
+  ]);
+
+  it("GRAPH_VERSION is 2 after confidence schema bump", () => {
+    expect(GRAPH_VERSION).toBe(2);
+  });
+
+  it("runChecks issues have provenance in union and confidence in [0,1]", () => {
+    const { nodes, edges } = scan(BROKEN);
+    const issues = runChecks(nodes, edges);
+    expect(issues.length).toBeGreaterThan(0);
+    for (const issue of issues) {
+      expect(issue.provenance).toBeDefined();
+      expect(VALID_PROVENANCE.has(issue.provenance!)).toBe(true);
+      expect(issue.confidence).toBeDefined();
+      expect(issue.confidence!).toBeGreaterThanOrEqual(0);
+      expect(issue.confidence!).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("broken POST /api/capture orphan is ast-exact with higher confidence", () => {
+    const { nodes, edges } = scan(BROKEN);
+    const issues = runChecks(nodes, edges);
+    const captureOrphan = issues.find(
+      (i) =>
+        i.kind === "orphaned_endpoint" &&
+        i.node.includes("POST") &&
+        i.node.includes("/api/capture"),
+    );
+    expect(captureOrphan).toBeDefined();
+    expect(captureOrphan!.provenance).toBe("ast-exact");
+    expect(captureOrphan!.confidence).toBe(CONFIDENCE.AST_EXACT);
+  });
+
+  it("broken missing_handler is ast-exact with high confidence", () => {
+    const { nodes, edges } = scan(BROKEN);
+    const issues = runChecks(nodes, edges);
+    const missing = issues.find((i) => i.kind === "missing_handler");
+    expect(missing).toBeDefined();
+    expect(missing!.provenance).toBe("ast-exact");
+    expect(missing!.confidence).toBe(CONFIDENCE.AST_EXACT);
+  });
+
+  it("template-url orphan is template-prefix with lower confidence than broken capture", () => {
+    const { nodes, edges } = scan(TEMPLATE_URL);
+    const issues = runChecks(nodes, edges);
+    const templateOrphan = issues.find((i) => i.kind === "orphaned_endpoint");
+    expect(templateOrphan, "expected orphaned_endpoint for template URL").toBeDefined();
+    expect(templateOrphan!.provenance).toBe("template-prefix");
+    expect(templateOrphan!.confidence).toBe(CONFIDENCE.TEMPLATE_PREFIX);
+
+    const { nodes: brokenNodes, edges: brokenEdges } = scan(BROKEN);
+    const brokenIssues = runChecks(brokenNodes, brokenEdges);
+    const captureOrphan = brokenIssues.find(
+      (i) =>
+        i.kind === "orphaned_endpoint" &&
+        i.node.includes("POST") &&
+        i.node.includes("/api/capture"),
+    );
+    expect(captureOrphan!.confidence!).toBeGreaterThan(templateOrphan!.confidence!);
+  });
+
+  it("http edges from template literals carry template-prefix provenance", () => {
+    const { edges } = scan(TEMPLATE_URL);
+    const httpEdges = edges.filter((e) => e.kind === "http");
+    expect(httpEdges.length).toBeGreaterThan(0);
+    expect(httpEdges.some((e) => e.provenance === "template-prefix")).toBe(true);
+  });
+
+  it("http edges from string literals carry ast-exact provenance", () => {
+    const { edges } = scan(BROKEN);
+    const captureEdge = edges.find(
+      (e) => e.kind === "http" && e.to.includes("POST") && e.to.includes("/api/capture"),
+    );
+    expect(captureEdge?.provenance).toBe("ast-exact");
+  });
+
+  it("PROXY and EXTERNAL nodes carry heuristic provenance", () => {
+    const { nodes } = scan(PROXIED);
+    const proxyNode = nodes.find((n) => n.name.startsWith("PROXY "));
+    expect(proxyNode?.provenance).toBe("heuristic");
+
+    const { nodes: extNodes } = scan(EXTERNAL);
+    const externalNode = extNodes.find((n) => n.name.startsWith("EXTERNAL "));
+    expect(externalNode?.provenance).toBe("heuristic");
+  });
+
+  it("determinism: two scans produce identical confidence/provenance per issue", () => {
+    const run = () => {
+      const { nodes, edges } = scan(BROKEN);
+      return runChecks(nodes, edges).map((i) => ({
+        kind: i.kind,
+        node: i.node,
+        provenance: i.provenance,
+        confidence: i.confidence,
+      }));
+    };
+    expect(run()).toEqual(run());
+  });
+
+  it("renderView degrades gracefully when confidence/provenance absent", () => {
+    const { nodes, edges } = scan(CLEAN);
+    const issues = runChecks(nodes, edges);
+    const features = buildFeatures(nodes, issues);
+    const legacyGraph = {
+      version: 0,
+      repo: "legacy",
+      scanned_at: "2026-01-01T00:00:00.000Z",
+      commit: "abc1234",
+      nodes,
+      edges,
+      issues: issues.map(({ provenance: _p, confidence: _c, ...rest }) => rest),
+      features,
+      contracts: [],
+    };
+    expect(() => renderView(legacyGraph)).not.toThrow();
+    const html = renderView(legacyGraph);
+    expect(html).toContain("<!DOCTYPE html>");
   });
 });

@@ -1,7 +1,38 @@
 // graph.json contract — THE single source of truth. Every consumer reads this.
 // Phase 0. Keep ids stable + deterministic so future phases can diff scans.
 
-export const GRAPH_VERSION = 1;
+export const GRAPH_VERSION = 2;
+
+/**
+ * How a graph element was derived:
+ * - ast-exact: resolved directly from parsed AST, no guessing
+ * - heuristic: directory/name-based inference
+ * - template-prefix: only the static prefix of a template literal was extractable
+ * - ai-inferred: produced by an LLM (never asserted as fact)
+ */
+export type Provenance = "ast-exact" | "heuristic" | "template-prefix" | "ai-inferred";
+
+/** Deterministic confidence heuristics (0..1). Not a statistical model. */
+export const CONFIDENCE = {
+  AST_EXACT: 0.9,
+  HEURISTIC: 0.6,
+  TEMPLATE_PREFIX: 0.4,
+  AI_INFERRED: 0.5,
+} as const;
+
+/** Map provenance label to fixed confidence score. */
+export function confidenceForProvenance(p: Provenance): number {
+  switch (p) {
+    case "ast-exact":
+      return CONFIDENCE.AST_EXACT;
+    case "heuristic":
+      return CONFIDENCE.HEURISTIC;
+    case "template-prefix":
+      return CONFIDENCE.TEMPLATE_PREFIX;
+    case "ai-inferred":
+      return CONFIDENCE.AI_INFERRED;
+  }
+}
 
 export type NodeType =
   | "route"
@@ -38,6 +69,10 @@ export interface SutraNode {
   data_shape: string | null;
   /** Heuristic feature grouping id. */
   feature: string;
+  /** Certainty score 0..1 inclusive; absent = unknown. */
+  confidence?: number;
+  /** How this finding was derived; absent = unknown. */
+  provenance?: Provenance;
 }
 
 export interface SutraEdge {
@@ -45,6 +80,10 @@ export interface SutraEdge {
   from: string;
   to: string;
   kind: EdgeKind;
+  /** Certainty score 0..1 inclusive; absent = unknown. */
+  confidence?: number;
+  /** How this finding was derived; absent = unknown. */
+  provenance?: Provenance;
 }
 
 export interface SutraIssue {
@@ -54,6 +93,10 @@ export interface SutraIssue {
   node: string;
   feature: string;
   message: string;
+  /** Certainty score 0..1 inclusive; absent = unknown. */
+  confidence?: number;
+  /** How this finding was derived; absent = unknown. */
+  provenance?: Provenance;
 }
 
 export interface SutraFeature {

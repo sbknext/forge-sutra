@@ -126,6 +126,7 @@ Migrates **structure only** — does not re-scan or fix semantic issues.
 |---------|--------|
 | 0 | Phase 0 schema (no `contracts` field) |
 | 1 | Added `contracts[]` from `feature.sutra.md` |
+| 2 | Optional `confidence` (0..1) and `provenance` on nodes, edges, issues |
 
 When `GRAPH_VERSION` bumps, run `forge-sutra migrate` on cached graphs before diffing or viewing.
 
@@ -135,7 +136,7 @@ When `GRAPH_VERSION` bumps, run `forge-sutra migrate` on cached graphs before di
 
 ```jsonc
 {
-  "version": 1,           // GRAPH_VERSION constant; bump = breaking change
+  "version": 2,           // GRAPH_VERSION constant; bump = breaking change
   "repo": "my-repo",      // basename of the scanned directory
   "scanned_at": "...",    // ISO 8601 UTC timestamp
   "commit": "abc1234",    // short git hash, or "unknown"
@@ -157,9 +158,13 @@ When `GRAPH_VERSION` bumps, run `forge-sutra migrate` on cached graphs before di
   "file": "src/api/route.ts",             // repo-relative POSIX path
   "line": 12,
   "data_shape": "{ id: string }",         // first param type text, or null
-  "feature": "api"                        // heuristic grouping id
+  "feature": "api",                        // heuristic grouping id
+  "confidence": 0.9,                       // optional 0..1; absent = unknown
+  "provenance": "ast-exact"                // optional; see Provenance below
 }
 ```
+
+**Provenance values:** `ast-exact` (AST-resolved, no guessing), `heuristic` (directory/name inference), `template-prefix` (truncated template literal URL), `ai-inferred` (LLM-produced, never asserted as fact).
 
 ### SutraEdge
 
@@ -167,7 +172,9 @@ When `GRAPH_VERSION` bumps, run `forge-sutra migrate` on cached graphs before di
 {
   "from": "src/components/Foo.tsx",
   "to":   "http:POST /api/bar",           // or a node id, or "ext:react"
-  "kind": "calls|imports|renders|tests|http"
+  "kind": "calls|imports|renders|tests|http",
+  "confidence": 0.9,                      // optional
+  "provenance": "ast-exact"               // optional
 }
 ```
 
@@ -179,7 +186,9 @@ When `GRAPH_VERSION` bumps, run `forge-sutra migrate` on cached graphs before di
   "kind": "orphaned_endpoint|missing_handler|dangling_test_ref|contract_parse_error|contract_missing_route|contract_undeclared_route|cross_repo_orphan",
   "node": "POST /api/bar",               // the thing in question
   "feature": "components",              // heuristic feature tag
-  "message": "Client calls POST /api/bar but no route handler defines it."
+  "message": "Client calls POST /api/bar but no route handler defines it.",
+  "confidence": 0.4,                    // optional
+  "provenance": "template-prefix"       // optional
 }
 ```
 

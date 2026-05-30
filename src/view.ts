@@ -1,4 +1,6 @@
 import type { SutraGraph, SutraFeature, SutraIssue, Severity } from "./types.js";
+import type { SutraDiff } from "./diff.js";
+import { formatDiffSummary } from "./diff.js";
 
 /** Escape text for safe HTML insertion. */
 function esc(s: string): string {
@@ -95,6 +97,53 @@ function buildMermaid(graph: SutraGraph, nodeIds: Set<string>, truncated: boolea
 
 const CAP = 60;
 
+/** True when diff has any structural delta. */
+function diffHasChanges(diff: SutraDiff): boolean {
+  return (
+    diff.nodes_added.length > 0 ||
+    diff.nodes_removed.length > 0 ||
+    diff.edges_added.length > 0 ||
+    diff.edges_removed.length > 0 ||
+    diff.issues_added.length > 0 ||
+    diff.issues_removed.length > 0 ||
+    diff.issues_changed.length > 0
+  );
+}
+
+/** Build "Changes since last scan" panel — display-only, heuristic. */
+function buildDiffPanel(diff: SutraDiff): string {
+  if (!diffHasChanges(diff)) return "";
+
+  const summary = formatDiffSummary(diff);
+  const listItems = (label: string, items: string[]): string => {
+    if (items.length === 0) return "";
+    const rows = items
+      .slice(0, 10)
+      .map((id) => `<li><code>${esc(id)}</code></li>`)
+      .join("\n");
+    const more =
+      items.length > 10
+        ? `<li class="more">… and ${items.length - 10} more</li>`
+        : "";
+    return `<div class="diff-group"><strong>${esc(label)}</strong><ul>${rows}${more}</ul></div>`;
+  };
+
+  const nodeAdded = diff.nodes_added.map((n) => n.id);
+  const nodeRemoved = diff.nodes_removed.map((n) => n.id);
+  const issueAdded = diff.issues_added.map((i) => `${i.kind}: ${i.node}`);
+  const issueRemoved = diff.issues_removed.map((i) => `${i.kind}: ${i.node}`);
+
+  return `
+<section class="diff-panel">
+  <h2>Changes since last scan</h2>
+  <p class="diff-meta">${esc(summary)} &mdash; structural delta only (heuristic / candidate).</p>
+  ${listItems("Nodes added", nodeAdded)}
+  ${listItems("Nodes removed", nodeRemoved)}
+  ${listItems("Issues added", issueAdded)}
+  ${listItems("Issues removed", issueRemoved)}
+</section>`;
+}
+
 /** Build the detail panel HTML for one feature (rendered server-side into a hidden div). */
 function buildDetailPanel(graph: SutraGraph, feature: SutraFeature, featureIssues: SutraIssue[]): string {
   const allIds = new Set(feature.node_ids);
@@ -125,7 +174,7 @@ function buildDetailPanel(graph: SutraGraph, feature: SutraFeature, featureIssue
 </div>`;
 }
 
-export function renderView(graph: SutraGraph): string {
+export function renderView(graph: SutraGraph, diff?: SutraDiff): string {
   const totalNodes = graph.nodes.length;
   const totalEdges = graph.edges.length;
   const totalIssues = graph.issues.length;
@@ -168,6 +217,7 @@ export function renderView(graph: SutraGraph): string {
     .join("\n");
 
   const graphJson = JSON.stringify(graph);
+  const diffPanel = diff ? buildDiffPanel(diff) : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -208,6 +258,14 @@ header .counts span { background: #334155; padding: 0.15rem 0.6rem; border-radiu
 .issue-info { background: #e0f2fe; color: #0c4a6e; }
 .sev { font-weight: 700; margin-right: 0.4rem; }
 .no-issues { font-size: 0.82rem; color: #16a34a; }
+.diff-panel { background: #fff; border: 1px solid #cbd5e1; border-left: 4px solid #6366f1; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.25rem; }
+.diff-panel h2 { font-size: 1rem; font-weight: 700; margin-bottom: 0.35rem; }
+.diff-meta { font-size: 0.8rem; color: #64748b; margin-bottom: 0.75rem; }
+.diff-group { margin-bottom: 0.65rem; font-size: 0.82rem; }
+.diff-group ul { list-style: none; margin-top: 0.25rem; padding-left: 0.5rem; }
+.diff-group li { padding: 0.15rem 0; color: #334155; }
+.diff-group li.more { color: #64748b; font-style: italic; }
+.diff-group code { font-size: 0.78rem; background: #f1f5f9; padding: 0.1rem 0.35rem; border-radius: 3px; }
 </style>
 </head>
 <body>
@@ -228,6 +286,8 @@ header .counts span { background: #334155; padding: 0.15rem 0.6rem; border-radiu
 <div class="disclaimer">
   &#9432; Heuristic grouping &mdash; candidate results, not complete. Feature boundaries are approximate. Review findings before acting on them.
 </div>
+
+${diffPanel}
 
 <div class="grid" id="feature-grid">
 ${cards}

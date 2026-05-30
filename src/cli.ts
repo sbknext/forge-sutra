@@ -20,10 +20,11 @@ import {
   SUTRA_DIR,
   GRAPH_FILE,
   GRAPH_PREV_FILE,
+  DIFF_FILE,
   VIEW_FILE,
   type SutraGraph,
 } from "./types.js";
-import { diffGraphs, formatDiffSummary, loadGraphFile } from "./diff.js";
+import { diffGraphs, formatDiffSummary, loadGraphFile, type SutraDiff } from "./diff.js";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -209,7 +210,17 @@ function cmdView(): void {
     process.exit(1);
   }
 
-  const html = renderView(graph);
+  let diff: SutraDiff | undefined;
+  const diffFile = path.join(sutraDir(cwd), DIFF_FILE);
+  if (fs.existsSync(diffFile)) {
+    try {
+      diff = JSON.parse(fs.readFileSync(diffFile, "utf8")) as SutraDiff;
+    } catch {
+      console.warn(chalk.yellow(`  Warning: could not read ${diffFile}; skipping diff panel.`));
+    }
+  }
+
+  const html = renderView(graph, diff);
   const viewFile = viewFilePath(cwd);
   fs.writeFileSync(viewFile, html, "utf8");
   console.log(chalk.bold(`\nView written → ${viewFile}`));

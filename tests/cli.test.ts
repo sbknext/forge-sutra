@@ -4,6 +4,7 @@
 
 import { describe, it, expect } from "vitest";
 import { execSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,6 +16,14 @@ function run(args: string): string {
 }
 
 describe("CLI help (SUTRA-7.1)", () => {
+  it("--version matches package.json", () => {
+    const pkg = JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, "../package.json"), "utf8"),
+    );
+    const out = run("--version").trim();
+    expect(out).toBe(pkg.version);
+  });
+
   it("shows claim-bounds disclaimer on --help", () => {
     const out = run("--help");
     expect(out).toMatch(/candidate|heuristic/i);

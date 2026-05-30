@@ -8,6 +8,8 @@
 import { Command } from "commander";
 import path from "node:path";
 import fs from "node:fs";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
 import chalk from "chalk";
 import { renderView } from "./view.js";
@@ -712,6 +714,9 @@ function cmdMigrate(graphPath: string | undefined): void {
 
 // ── program ───────────────────────────────────────────────────────────────────
 
+const require = createRequire(fileURLToPath(import.meta.url));
+const { version: pkgVersion } = require("../package.json") as { version: string };
+
 const program = new Command();
 
 const CLAIM_BOUNDS =
@@ -723,7 +728,7 @@ program
     "Static structural graph tool for JS/TS repos. Writes .sutra/graph.json + view.html. " +
     CLAIM_BOUNDS
   )
-  .version("1.0.0");
+  .version(pkgVersion);
 
 program
   .command("scan [repoPath]")

@@ -11,6 +11,7 @@ export const SUPPORTED_MIGRATIONS: Array<{ from: number; to: number }> = [
   { from: 0, to: 1 },
   { from: 1, to: 2 },
   { from: 2, to: 3 },
+  { from: 3, to: 4 },
 ];
 
 /** Migrate a graph object in-memory. Returns migrated graph. */
@@ -52,6 +53,15 @@ export function migrateGraph(raw: Record<string, unknown>): SutraGraph {
     raw.features = buildFeatures(nodes, issueList, edges, { contracts });
     raw.version = 3;
     version = 3;
+  }
+
+  // v3 → v4: add flows: []
+  if (version === 3) {
+    if (!Array.isArray(raw.flows)) {
+      raw.flows = [];
+    }
+    raw.version = 4;
+    version = 4;
   }
 
   if (version !== GRAPH_VERSION) {

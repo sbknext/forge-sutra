@@ -255,3 +255,17 @@ Memory IDs: 186 (3.2), 187 (4.1), 188 (5.1), 189 (6.1). Tags: `sutra`, `phase1`,
 **Claim bounds (final):** All scan/diff/reconcile/export/hook results remain **heuristic / candidate**. Hooks run user-supplied local scripts — not sandboxed. No runtime execution, no auto-fix, no completeness claims.
 
 **BMAD plans:** `_bmad/sutra-phase2/` through `_bmad/sutra-phase7/`.
+
+---
+
+## Story 2.5 — Flow terminal detection (2026-05-30)
+
+**Heuristic (code-derived, candidate boundaries):**
+
+- **DB terminal:** `calls` edge from handler/module to a function named `query|execute|raw|transaction` or a module path matching `db|prisma|knex|drizzle|sql`.
+- **External terminal:** outbound `http` edge to a host in the EXTERNAL allowlist nodes.
+- **Handler terminal:** resolved route handler with no recognised DB/external hop.
+- **Unresolved:** http target with no local route match and no cross-repo index entry (proxied paths need cross-repo index — otherwise unresolved).
+- **Truncated:** cycle detected or max depth (32) exceeded.
+
+Inline property calls (e.g. `db.query()` without a resolved `calls` edge) are **not** detected — flows may stop at `handler` instead of `db`. This is an intentional graph-only limit.

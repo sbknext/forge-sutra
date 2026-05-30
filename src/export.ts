@@ -17,7 +17,7 @@ export function exportGraphSchema(): string {
     title: "SutraGraph",
     description: "graph.json schema for forge-sutra scans (candidate/heuristic)",
     type: "object",
-    required: ["version", "repo", "scanned_at", "commit", "nodes", "edges", "issues", "features", "contracts"],
+    required: ["version", "repo", "scanned_at", "commit", "nodes", "edges", "issues", "features", "contracts", "flows"],
     properties: {
       version: { type: "integer", const: GRAPH_VERSION },
       repo: { type: "string" },
@@ -28,6 +28,7 @@ export function exportGraphSchema(): string {
       issues: { type: "array", items: { $ref: "#/definitions/SutraIssue" } },
       features: { type: "array", items: { $ref: "#/definitions/SutraFeature" } },
       contracts: { type: "array", items: { $ref: "#/definitions/SutraContract" } },
+      flows: { type: "array", items: { $ref: "#/definitions/SutraFlow" } },
     },
     definitions: {
       SutraNode: {
@@ -100,6 +101,19 @@ export function exportGraphSchema(): string {
               },
             },
           },
+        },
+      },
+      SutraFlow: {
+        type: "object",
+        required: ["id", "entry", "steps", "terminal", "confidence"],
+        properties: {
+          id: { type: "string" },
+          entry: { type: "string" },
+          steps: { type: "array" },
+          terminal: {
+            enum: ["handler", "db", "external", "unresolved", "truncated"],
+          },
+          confidence: { enum: ["confirmed", "candidate"] },
         },
       },
     },

@@ -90,6 +90,16 @@ function printScanSummary(graph: SutraGraph, outFile: string): void {
   console.log(
     `  health: ${chalk.green(String(healthDist.green))} green · ${chalk.yellow(String(healthDist.amber))} amber · ${chalk.red(String(healthDist.red))} red (heuristic structural)`,
   );
+
+  const flowCount = graph.flows?.length ?? 0;
+  if (flowCount > 0) {
+    const confirmed = graph.flows.filter((f) => f.confidence === "confirmed").length;
+    const candidate = flowCount - confirmed;
+    console.log(
+      `  flows: ${chalk.cyan(String(flowCount))} traced (${confirmed} confirmed, ${candidate} candidate)`,
+    );
+  }
+
   console.log(`  commit: ${chalk.gray(graph.commit)}`);
   console.log();
 

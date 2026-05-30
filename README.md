@@ -136,7 +136,7 @@ When `GRAPH_VERSION` bumps, run `forge-sutra migrate` on cached graphs before di
 
 ```jsonc
 {
-  "version": 3,           // GRAPH_VERSION constant; bump = breaking change
+  "version": 4,           // GRAPH_VERSION constant; bump = breaking change
   "repo": "my-repo",      // basename of the scanned directory
   "scanned_at": "...",    // ISO 8601 UTC timestamp
   "commit": "abc1234",    // short git hash, or "unknown"
@@ -144,7 +144,8 @@ When `GRAPH_VERSION` bumps, run `forge-sutra migrate` on cached graphs before di
   "edges": [SutraEdge],
   "issues": [SutraIssue],
   "features": [SutraFeature],
-  "contracts": [SutraContract]  // from feature.sutra.md when present
+  "contracts": [SutraContract],  // from feature.sutra.md when present
+  "flows": [SutraFlow]           // ordered request paths (Story 2.5)
 }
 ```
 
@@ -215,6 +216,23 @@ When `GRAPH_VERSION` bumps, run `forge-sutra migrate` on cached graphs before di
 ### Feature health (heuristic)
 
 Each feature carries a **heuristic structural health score** (0–100) with band `green` / `amber` / `red`. This is derived from code structure (issue load, orphan ratio, and optional signals when available) — **not** runtime correctness or test pass/fail. The viewer labels this explicitly so it is never read as a bug-free guarantee.
+
+### SutraFlow
+
+```jsonc
+{
+  "id": "flow:app/widget/page.tsx#WidgetPage",
+  "entry": "app/widget/page.tsx#WidgetPage",
+  "steps": [
+    { "node": "app/widget/page.tsx#WidgetPage", "edge": null },
+    { "node": "components/WidgetButton.tsx#WidgetButton", "edge": { "from": "...", "to": "...", "kind": "renders" } }
+  ],
+  "terminal": "db|handler|external|unresolved|truncated",
+  "confidence": "confirmed|candidate"
+}
+```
+
+Request flows are **code-derived paths** from entry (route/component) through renders/calls/http hops. Unresolved or dynamic-segment http targets are labelled `candidate`, not confirmed.
 
 ---
 

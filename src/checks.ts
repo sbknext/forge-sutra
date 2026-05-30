@@ -6,6 +6,15 @@
 
 import type { SutraNode, SutraEdge, SutraIssue, SutraContract, Provenance } from "./types.js";
 import { confidenceForProvenance } from "./types.js";
+import {
+  pathMatches,
+  parseEndpointDef,
+  parseHttpTargetId,
+  collectProxyPrefixes,
+  isCoveredByProxy,
+  collectExternalHosts,
+  normalisePath,
+} from "./util/http-match.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -30,137 +39,6 @@ function featureOf(nodeMap: Map<string, SutraNode>, id: string): string {
  */
 function isExternal(id: string): boolean {
   return id.startsWith("ext:") || id.startsWith("http:");
-}
-
-// ---------------------------------------------------------------------------
-// HTTP route-segment matching
-// ---------------------------------------------------------------------------
-
-/**
- * Normalise a URL path: trim trailing slash (except root "/"), lower-case.
- */
-function normalisePath(p: string): string {
-  const s = p.toLowerCase().replace(/\/+$/, "") || "/";
-  return s;
-}
-
-/**
- * Split a path into segments, filtering empty strings produced by leading "/".
- */
-function segments(p: string): string[] {
-  return p.split("/").filter(Boolean);
-}
-
-/**
- * True if a route definition segment is dynamic (:param or [param] styles).
- */
-function isDynamic(seg: string): boolean {
-  return seg.startsWith(":") || (seg.startsWith("[") && seg.endsWith("]"));
-}
-
-/**
- * True if definedPath (a route pattern) matches clientPath (a concrete path).
- * Rules:
- *   - same number of segments
- *   - each segment either matches literally, or the defined segment is dynamic
- *   - trailing-slash normalised before comparison
- */
-function pathMatches(definedPath: string, clientPath: string): boolean {
-  const defSegs = segments(normalisePath(definedPath));
-  const cliSegs = segments(normalisePath(clientPath));
-  if (defSegs.length !== cliSegs.length) return false;
-  for (let i = 0; i < defSegs.length; i++) {
-    // Either side may be a dynamic segment (:id, :dynamic, [param]).
-    if (isDynamic(defSegs[i]!) || isDynamic(cliSegs[i]!)) continue;
-    if (defSegs[i] !== cliSegs[i]) return false;
-  }
-  return true;
-}
-
-/**
- * Parse a node's HTTP method+path from its name or data_shape.
- * Acceptable formats: "METHOD /path", "METHOD: /path".
- * Returns null if unparseable.
- */
-function parseEndpointDef(node: SutraNode): { method: string; path: string } | null {
-  const sources = [node.name, node.data_shape ?? ""];
-  for (const src of sources) {
-    const m = src.match(/^([A-Z]+):?\s+(\/[^\s]*)$/i);
-    if (m) {
-      return { method: m[1]!.toUpperCase(), path: m[2]! };
-    }
-  }
-  return null;
-}
-
-/**
- * Parse "METHOD /path" out of an httpTargetId ("http:METHOD /path" or "http:METHOD /path|host").
- */
-function parseHttpTargetId(
-  id: string,
-): { method: string; path: string; host: string | null } | null {
-  const body = id.slice("http:".length).trim();
-  let host: string | null = null;
-  let methodPath = body;
-  const pipeIdx = body.indexOf("|");
-  if (pipeIdx !== -1) {
-    methodPath = body.slice(0, pipeIdx).trim();
-    host = body.slice(pipeIdx + 1).trim().toLowerCase() || null;
-  }
-  const m = methodPath.match(/^([A-Z]+)\s+(\/[^\s]*)$/i);
-  if (!m) return null;
-  return { method: m[1]!.toUpperCase(), path: m[2]!, host };
-}
-
-// ---------------------------------------------------------------------------
-// Proxy prefix helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Collect proxy prefixes from nodes emitted by scanner's detectProxyNodes().
- * These are "route" nodes whose name starts with "PROXY ".
- */
-function collectProxyPrefixes(nodes: SutraNode[]): string[] {
-  const prefixes: string[] = [];
-  for (const n of nodes) {
-    if (n.type === "route" && n.name.startsWith("PROXY ")) {
-      const prefix = n.name.slice("PROXY ".length); // e.g. '/api'
-      prefixes.push(prefix);
-    }
-  }
-  return prefixes;
-}
-
-/**
- * True if `urlPath` is covered by any known proxy prefix.
- * Segment-aware: '/api' covers '/api/x' but NOT '/apixyz'.
- * The special prefix '/' covers everything.
- */
-function isCoveredByProxy(urlPath: string, proxyPrefixes: string[]): boolean {
-  for (const prefix of proxyPrefixes) {
-    if (prefix === "/") return true; // catch-all
-    // Must be exact match OR urlPath starts with prefix + '/'
-    if (urlPath === prefix) return true;
-    if (urlPath.startsWith(prefix + "/")) return true;
-  }
-  return false;
-}
-
-// ---------------------------------------------------------------------------
-// External host helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Collect external hostnames from nodes emitted by scanner's detectExternalHostNodes().
- */
-function collectExternalHosts(nodes: SutraNode[]): string[] {
-  const hosts: string[] = [];
-  for (const n of nodes) {
-    if (n.type === "route" && n.name.startsWith("EXTERNAL ")) {
-      hosts.push(n.name.slice("EXTERNAL ".length).toLowerCase());
-    }
-  }
-  return hosts;
 }
 
 // ---------------------------------------------------------------------------

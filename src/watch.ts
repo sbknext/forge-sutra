@@ -8,6 +8,7 @@ import path from "node:path";
 import { scan, collectFiles } from "./scanner.js";
 import { runChecks, checkContractDrift } from "./checks.js";
 import { buildFeatures } from "./features.js";
+import { buildFlows } from "./flows.js";
 import { loadContracts } from "./contracts.js";
 import { runPostScanHooks } from "./hooks.js";
 import { diffGraphs, formatDiffSummary } from "./diff.js";
@@ -40,6 +41,7 @@ export interface ScanPipelineResult {
   graphPath: string;
   diffSummary?: string;
   profile?: ScanTimings;
+  flowStats?: { confirmed: number; candidate: number };
 }
 
 export interface WatchOptions {
@@ -100,6 +102,7 @@ export function runScanPipeline(
     issues: [],
     features: [],
     contracts,
+    flows: [],
   };
 
   const writeStart = performance.now();
@@ -110,6 +113,8 @@ export function runScanPipeline(
   issues = [...issues, ...hookIssues];
   graph.issues = issues;
   graph.features = buildFeatures(nodes, issues, edges, { contracts });
+  const flowResult = buildFlows(nodes, edges);
+  graph.flows = flowResult.flows;
 
   fs.writeFileSync(graphPathForHooks, JSON.stringify(graph, null, 2), "utf8");
   timings.writeMs = performance.now() - writeStart;
@@ -127,7 +132,16 @@ export function runScanPipeline(
     options.onProfile?.(timings);
   }
 
-  return { graph, graphPath: graphPathForHooks, diffSummary, profile: options?.profile ? timings : undefined };
+  return {
+    graph,
+    graphPath: graphPathForHooks,
+    diffSummary,
+    profile: options?.profile ? timings : undefined,
+    flowStats: {
+      confirmed: flowResult.confirmed,
+      candidate: flowResult.candidate,
+    },
+  };
 }
 
 /** Collect watchable source files under repoRoot. */

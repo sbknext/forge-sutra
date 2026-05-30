@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import { scan } from "../src/scanner.js";
 import { runChecks, checkContractDrift } from "../src/checks.js";
 import { buildFeatures, computeFeatureHealth, bandForScore, GREEN_MIN, AMBER_MIN } from "../src/features.js";
+import { buildFlows } from "../src/flows.js";
 import { loadContracts } from "../src/contracts.js";
 import { renderView } from "../src/view.js";
 import {
@@ -41,6 +42,10 @@ const CONTRACT_DECLARED = path.resolve(__dirname, "fixtures/contract-declared");
 const CONTRACT_CLEAN = path.resolve(__dirname, "fixtures/contract-clean");
 const CONTRACT_PARSE_ERROR = path.resolve(__dirname, "fixtures/contract-parse-error");
 const TEMPLATE_URL = path.resolve(__dirname, "fixtures/template-url");
+const FLOW_LOCAL = path.resolve(__dirname, "fixtures/flow-local");
+const FLOW_DYNAMIC = path.resolve(__dirname, "fixtures/flow-dynamic");
+const FLOW_UNRESOLVED = path.resolve(__dirname, "fixtures/flow-unresolved");
+const FLOW_CYCLE = path.resolve(__dirname, "fixtures/flow-cycle");
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 function sortedIds(nodes: SutraNode[]): string[] {
@@ -603,8 +608,8 @@ describe("confidence & provenance (Story 1.3)", () => {
     "ai-inferred",
   ]);
 
-  it("GRAPH_VERSION is 3 after feature health schema bump", () => {
-    expect(GRAPH_VERSION).toBe(3);
+  it("GRAPH_VERSION is 4 after flows schema bump", () => {
+    expect(GRAPH_VERSION).toBe(4);
   });
 
   it("runChecks issues have provenance in union and confidence in [0,1]", () => {
@@ -714,6 +719,7 @@ describe("confidence & provenance (Story 1.3)", () => {
       issues: issues.map(({ provenance: _p, confidence: _c, ...rest }) => rest),
       features,
       contracts: [],
+      flows: [],
     };
     expect(() => renderView(legacyGraph)).not.toThrow();
     const html = renderView(legacyGraph);
@@ -806,5 +812,96 @@ describe("feature health — schema guard", () => {
       expect(["green", "amber", "red"]).toContain(feat.health.band);
       expect(Number.isInteger(feat.health.score)).toBe(true);
     }
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 16. REQUEST FLOW TRACING — Story 2.5
+// ═════════════════════════════════════════════════════════════════════════════
+describe("request flow tracing — flow-local (Story 2.5)", () => {
+  it("traces entry → component → http → handler → db as confirmed flow", () => {
+    const { nodes, edges } = scan(FLOW_LOCAL);
+    const { flows } = buildFlows(nodes, edges);
+    expect(flows.length).toBeGreaterThanOrEqual(1);
+    const flow = flows.find((f) => f.id.startsWith("flow:app/widget/page.tsx"));
+    expect(flow).toBeDefined();
+    expect(flow!.terminal).toBe("db");
+    expect(flow!.confidence).toBe("confirmed");
+    expect(flow!.steps.length).toBeGreaterThanOrEqual(3);
+    expect(flow!.steps[0]!.edge).toBeNull();
+    expect(flow!.steps.some((s) => s.edge?.kind === "http")).toBe(true);
+  });
+
+  it("deterministic flows sorted by id across two runs", () => {
+    const run = () => {
+      const { nodes, edges } = scan(FLOW_LOCAL);
+      return buildFlows(nodes, edges).flows;
+    };
+    expect(run()).toEqual(run());
+    const flows = run();
+    const ids = flows.map((f) => f.id);
+    expect([...ids].sort()).toEqual(ids);
+  });
+});
+
+describe("request flow tracing — flow-dynamic", () => {
+  it("dynamic-segment http hop yields candidate confidence", () => {
+    const { nodes, edges } = scan(FLOW_DYNAMIC);
+    const { flows } = buildFlows(nodes, edges);
+    expect(flows.length).toBeGreaterThanOrEqual(1);
+    const flow = flows[0]!;
+    expect(flow.confidence).toBe("candidate");
+    expect(flow.steps.some((s) => s.edge?.kind === "http")).toBe(true);
+  });
+});
+
+describe("request flow tracing — flow-unresolved", () => {
+  it("unresolved http ends with terminal unresolved, not dropped", () => {
+    const { nodes, edges } = scan(FLOW_UNRESOLVED);
+    const { flows } = buildFlows(nodes, edges);
+    const flow = flows.find((f) => f.terminal === "unresolved");
+    expect(flow).toBeDefined();
+    expect(flow!.confidence).toBe("candidate");
+  });
+});
+
+describe("request flow tracing — flow-cycle", () => {
+  it("cycle detection yields truncated terminal", () => {
+    const { nodes, edges } = scan(FLOW_CYCLE);
+    const { flows } = buildFlows(nodes, edges);
+    expect(flows.length).toBeGreaterThanOrEqual(1);
+    const flow = flows[0]!;
+    expect(flow.terminal).toBe("truncated");
+    expect(flow.confidence).toBe("candidate");
+  });
+});
+
+describe("request flow tracing — proxied regression", () => {
+  it("proxied fixture still has zero orphaned_endpoint issues", () => {
+    const { nodes, edges } = scan(PROXIED);
+    const issues = runChecks(nodes, edges);
+    expect(issues.filter((i) => i.kind === "orphaned_endpoint")).toHaveLength(0);
+  });
+
+  it("renderView tolerates flows field on graph", () => {
+    const { nodes, edges } = scan(FLOW_LOCAL);
+    const issues = runChecks(nodes, edges);
+    const features = buildFeatures(nodes, issues, edges);
+    const { flows } = buildFlows(nodes, edges);
+    const graph = {
+      version: GRAPH_VERSION,
+      repo: "flow-local",
+      scanned_at: "2026-01-01T00:00:00.000Z",
+      commit: "test",
+      nodes,
+      edges,
+      issues,
+      features,
+      contracts: [],
+      flows,
+    };
+    expect(() => renderView(graph)).not.toThrow();
+    const html = renderView(graph);
+    expect(html).toContain("<!DOCTYPE html>");
   });
 });

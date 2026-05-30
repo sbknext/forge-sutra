@@ -20,30 +20,28 @@ describe("migrateGraph (SUTRA-8.1)", () => {
     expect(raw.contracts).toBeUndefined();
 
     const graph = migrateGraph(raw);
-    expect(graph.version).toBe(3);
+    expect(graph.version).toBe(4);
     expect(graph.contracts).toEqual([]);
     expect(graph.nodes.length).toBe(1);
     expect(graph.features.length).toBe(1);
     expect(graph.features[0]?.health).toBeDefined();
+    expect(graph.flows).toEqual([]);
   });
 
-  it("v1 → v3 bumps through v2 (confidence/provenance optional fields)", () => {
+  it("v1 → v4 bumps through intermediate versions", () => {
     const v0 = JSON.parse(fs.readFileSync(V0_FIXTURE, "utf8")) as Record<string, unknown>;
     const v1only = { ...v0, version: 1, contracts: [] };
-    const v3 = migrateGraph(v1only);
-    expect(v3.version).toBe(3);
+    const v4 = migrateGraph(v1only);
+    expect(v4.version).toBe(4);
   });
 
-  it("v2 → v3 adds health to features", () => {
-    const v0 = JSON.parse(fs.readFileSync(V0_FIXTURE, "utf8")) as Record<string, unknown>;
-    const v2 = { ...migrateGraph({ ...v0, version: 0 }), version: 2 } as Record<string, unknown>;
-    // migrateGraph v0 already goes to v3; build v2 manually from v0 fixture
+  it("v3 → v4 adds flows: []", () => {
     const raw = JSON.parse(fs.readFileSync(V0_FIXTURE, "utf8")) as Record<string, unknown>;
-    raw.version = 2;
+    raw.version = 3;
     raw.contracts = [];
-    const v3 = migrateGraph(raw);
-    expect(v3.version).toBe(3);
-    expect(v3.features[0]?.health?.band).toBeDefined();
+    const v4 = migrateGraph(raw);
+    expect(v4.version).toBe(4);
+    expect(v4.flows).toEqual([]);
   });
 
   it("already current version is no-op", () => {
@@ -66,10 +64,10 @@ describe("migrateGraph (SUTRA-8.1)", () => {
     const result = migrateFile(dest);
     expect(result.migrated).toBe(true);
     expect(result.fromVersion).toBe(0);
-    expect(result.toVersion).toBe(3);
+    expect(result.toVersion).toBe(4);
 
     const written = JSON.parse(fs.readFileSync(dest, "utf8"));
-    expect(written.version).toBe(3);
+    expect(written.version).toBe(4);
     expect(written.contracts).toEqual([]);
   });
 

@@ -1,7 +1,7 @@
 // graph.json contract — THE single source of truth. Every consumer reads this.
 // Phase 0. Keep ids stable + deterministic so future phases can diff scans.
 
-export const GRAPH_VERSION = 3;
+export const GRAPH_VERSION = 4;
 
 /**
  * How a graph element was derived:
@@ -140,6 +140,26 @@ export interface SutraContract {
   endpoints: SutraContractEndpoint[];
 }
 
+export type FlowTerminal =
+  | "handler"
+  | "db"
+  | "external"
+  | "unresolved"
+  | "truncated";
+
+export interface SutraFlowStep {
+  node: string;
+  edge: SutraEdge | null;
+}
+
+export interface SutraFlow {
+  id: string;
+  entry: string;
+  steps: SutraFlowStep[];
+  terminal: FlowTerminal;
+  confidence: "confirmed" | "candidate";
+}
+
 export interface SutraGraph {
   version: number;
   repo: string;
@@ -153,6 +173,8 @@ export interface SutraGraph {
   features: SutraFeature[];
   /** Parsed from feature.sutra.md when present; empty otherwise. */
   contracts: SutraContract[];
+  /** Ordered request paths entry → terminal (Story 2.5). */
+  flows: SutraFlow[];
 }
 
 export const SUTRA_DIR = ".sutra";

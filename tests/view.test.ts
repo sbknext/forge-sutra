@@ -12,6 +12,7 @@ import { scan } from "../src/scanner.js";
 import { loadContracts } from "../src/contracts.js";
 import { checkContractDrift, runChecks } from "../src/checks.js";
 import { buildFeatures } from "../src/features.js";
+import { buildFlows } from "../src/flows.js";
 import { GRAPH_VERSION, type SutraGraph } from "../src/types.js";
 import { buildReconcileOutput, reconcileGraphs } from "../src/reconcile.js";
 
@@ -74,6 +75,8 @@ function buildGraphFromFixture(repoRoot: string): SutraGraph {
   const { contracts, issues: contractIssues } = loadContracts(repoRoot);
   const driftIssues = checkContractDrift(contracts, nodes);
   const issues = [...checkIssues, ...contractIssues, ...driftIssues];
+  const features = buildFeatures(nodes, issues, edges, { contracts });
+  const { flows } = buildFlows(nodes, edges);
   return {
     version: GRAPH_VERSION,
     repo: "test",
@@ -82,8 +85,9 @@ function buildGraphFromFixture(repoRoot: string): SutraGraph {
     nodes,
     edges,
     issues,
-    features: buildFeatures(nodes, issues),
+    features,
     contracts,
+    flows,
   };
 }
 

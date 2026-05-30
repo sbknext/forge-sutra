@@ -2,7 +2,9 @@
 
 Static structural graph tool for JavaScript / TypeScript and **Frappe / Python** repositories. Points at a repo, produces a structural flow graph (`graph.json`) and a local HTML view. **v1.1.0** — Phases 0–7 complete + incremental scan cache.
 
-![Sutra overview — echo-ai scan](docs/overview.png)
+![Sutra feature viewer — echo-ai scan: feature cards with health scores, search, and filters](docs/viewer.png)
+
+> The interactive feature viewer (`forge-sutra viewer`) on a live echo-ai scan — 643 nodes, 1,206 edges, 32 features. Health-scored feature cards, search, health/confidence filters, and Overview / Ecosystem tabs. Click any card for its drill-down (traced flows, nodes, endpoints, issues).
 
 ## Vision
 

@@ -7,6 +7,8 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { renderFilteredView } from "./export-view.js";
+import { slugifyViewState, decodeViewState } from "./viewState.js";
 import {
   GRAPH_VERSION,
   LINK_VERSION,
@@ -14,6 +16,7 @@ import {
   GRAPH_FILE,
   LINK_FILE,
   type LinkResult,
+  type SutraGraph,
 } from "../types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -232,6 +235,33 @@ export function startViewerServer(
         html = html.replace("__GRAPH_VERSION__", String(GRAPH_VERSION));
         res.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-store" });
         res.end(html);
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/export-view") {
+        let body = "";
+        req.on("data", (chunk) => {
+          body += chunk.toString();
+        });
+        req.on("end", () => {
+          try {
+            const parsed = JSON.parse(body) as { state?: string };
+            const state = decodeViewState(parsed.state ?? "");
+            const graphRaw = fs.readFileSync(path.join(cwd, SUTRA_DIR, GRAPH_FILE), "utf8");
+            const graph = JSON.parse(graphRaw) as SutraGraph;
+            const html = renderFilteredView(graph, state);
+            const slug = slugifyViewState(state);
+            const outName = `view.${slug}.html`;
+            const outPath = path.join(cwd, SUTRA_DIR, outName);
+            fs.mkdirSync(path.dirname(outPath), { recursive: true });
+            fs.writeFileSync(outPath, html, "utf8");
+            res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+            res.end(JSON.stringify({ path: outPath, slug: outName }));
+          } catch (err) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: String(err) }));
+          }
+        });
         return;
       }
 

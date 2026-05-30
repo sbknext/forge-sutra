@@ -1,0 +1,12 @@
+{
+  "version": 5,
+  "repo": "filter-empty",
+  "scanned_at": "2026-05-30T12:00:00.000Z",
+  "commit": "fe1",
+  "nodes": [],
+  "edges": [],
+  "issues": [],
+  "features": [],
+  "contracts": [],
+  "flows": []
+}

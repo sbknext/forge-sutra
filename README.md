@@ -96,6 +96,10 @@ forge-sutra watch
 forge-sutra watch --port 4600
 ```
 
+### Search, filter & share (viewer)
+
+The viewer SPA supports substring search, health-band toggles, confidence threshold (elements without `confidence` show only at threshold `0`), and issue-kind filters. **Share this view** encodes filter state in the URL hash; **Export view** writes a self-contained `.sutra/view.<slug>.html` via `POST /export-view`.
+
 ### `forge-sutra diff [pathA] [pathB]`
 
 Diff two `graph.json` files. Defaults: `.sutra/graph.json` vs `.sutra/graph.prev.json`.

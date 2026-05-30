@@ -1,7 +1,7 @@
 // graph.json contract — THE single source of truth. Every consumer reads this.
 // Phase 0. Keep ids stable + deterministic so future phases can diff scans.
 
-export const GRAPH_VERSION = 0;
+export const GRAPH_VERSION = 1;
 
 export type NodeType =
   | "route"
@@ -19,7 +19,8 @@ export type Severity = "error" | "warn" | "info";
 export type IssueKind =
   | "orphaned_endpoint"
   | "missing_handler"
-  | "dangling_test_ref";
+  | "dangling_test_ref"
+  | "contract_parse_error";
 
 export interface SutraNode {
   /** Stable deterministic id: `relative/path#symbol`. */
@@ -58,6 +59,20 @@ export interface SutraFeature {
   issue_count: number;
 }
 
+/** Author-declared endpoint from feature.sutra.md (intent, not ground truth). */
+export interface SutraContractEndpoint {
+  method: string;
+  path: string;
+}
+
+/** Parsed contract file — candidate declaration only. */
+export interface SutraContract {
+  feature: string;
+  /** Repo-relative path to the contract file. */
+  file: string;
+  endpoints: SutraContractEndpoint[];
+}
+
 export interface SutraGraph {
   version: number;
   repo: string;
@@ -69,6 +84,8 @@ export interface SutraGraph {
   edges: SutraEdge[];
   issues: SutraIssue[];
   features: SutraFeature[];
+  /** Parsed from feature.sutra.md when present; empty otherwise. */
+  contracts: SutraContract[];
 }
 
 export const SUTRA_DIR = ".sutra";

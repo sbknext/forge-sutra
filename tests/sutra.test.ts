@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import { scan } from "../src/scanner.js";
 import { runChecks } from "../src/checks.js";
 import { buildFeatures } from "../src/features.js";
+import { loadContracts } from "../src/contracts.js";
 import type { SutraNode, SutraEdge, SutraIssue } from "../src/types.js";
 
 // ── path helpers ──────────────────────────────────────────────────────────────
@@ -28,6 +29,8 @@ const ASSETS = path.resolve(__dirname, "fixtures/assets");
 const EXTERNAL = path.resolve(__dirname, "fixtures/external");
 const DYNAMIC = path.resolve(__dirname, "fixtures/dynamic");
 const DYNAMIC_MISMATCH = path.resolve(__dirname, "fixtures/dynamic-mismatch");
+const CONTRACT_DECLARED = path.resolve(__dirname, "fixtures/contract-declared");
+const CONTRACT_PARSE_ERROR = path.resolve(__dirname, "fixtures/contract-parse-error");
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 function sortedIds(nodes: SutraNode[]): string[] {
@@ -464,5 +467,46 @@ describe("runChecks — dynamic-mismatch fixture (wrong static path)", () => {
       orphan,
       "GET /api/todos should be orphaned — no collection route, only [id] route"
     ).toBeDefined();
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 12. CONTRACT FILES — feature.sutra.md parser (SUTRA-2.1)
+// ═════════════════════════════════════════════════════════════════════════════
+describe("loadContracts — contract-declared fixture", () => {
+  it("parses feature name and declared endpoints", () => {
+    const { contracts, issues } = loadContracts(CONTRACT_DECLARED);
+    expect(issues).toHaveLength(0);
+    expect(contracts).toHaveLength(1);
+    expect(contracts[0]!.feature).toBe("greet");
+    expect(contracts[0]!.file).toBe("feature.sutra.md");
+    const methods = contracts[0]!.endpoints.map((e) => `${e.method} ${e.path}`);
+    expect(methods).toContain("GET /api/greet");
+    expect(methods).toContain("POST /api/greet");
+  });
+
+  it("scan + runChecks regression unchanged (zero structural issues)", () => {
+    const { nodes, edges } = scan(CONTRACT_DECLARED);
+    const issues = runChecks(nodes, edges);
+    expect(issues).toHaveLength(0);
+  });
+});
+
+describe("loadContracts — contract-parse-error fixture", () => {
+  it("emits contract_parse_error warn for bad endpoint line", () => {
+    const { contracts, issues } = loadContracts(CONTRACT_PARSE_ERROR);
+    const parseErrors = issues.filter((i) => i.kind === "contract_parse_error");
+    expect(parseErrors.length).toBeGreaterThan(0);
+    expect(parseErrors.every((i) => i.severity === "warn")).toBe(true);
+    // Valid lines still parsed
+    expect(contracts[0]?.endpoints.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("loadContracts — clean fixture (no contract file)", () => {
+  it("returns empty contracts and no parse issues", () => {
+    const { contracts, issues } = loadContracts(CLEAN);
+    expect(contracts).toHaveLength(0);
+    expect(issues).toHaveLength(0);
   });
 });

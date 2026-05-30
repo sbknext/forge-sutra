@@ -14,6 +14,7 @@ import { scan } from "./scanner.js";
 import { runChecks } from "./checks.js";
 import { buildFeatures } from "./features.js";
 import { renderView } from "./view.js";
+import { loadContracts } from "./contracts.js";
 import {
   GRAPH_VERSION,
   SUTRA_DIR,
@@ -63,7 +64,9 @@ function cmdScan(repoPath: string | undefined, opts: { watch?: boolean }): void 
 
   // Run pipeline
   const { nodes, edges } = scan(repoRoot);
-  const issues = runChecks(nodes, edges);
+  const checkIssues = runChecks(nodes, edges);
+  const { contracts, issues: contractIssues } = loadContracts(repoRoot);
+  const issues = [...checkIssues, ...contractIssues];
   const features = buildFeatures(nodes, issues);
   const commit = getCommit(repoRoot);
 
@@ -76,6 +79,7 @@ function cmdScan(repoPath: string | undefined, opts: { watch?: boolean }): void 
     edges,
     issues,
     features,
+    contracts,
   };
 
   // Write graph.json

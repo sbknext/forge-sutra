@@ -11,7 +11,7 @@ import fs from "node:fs";
 import { execSync } from "node:child_process";
 import chalk from "chalk";
 import { scan } from "./scanner.js";
-import { runChecks } from "./checks.js";
+import { runChecks, checkContractDrift } from "./checks.js";
 import { buildFeatures } from "./features.js";
 import { renderView } from "./view.js";
 import { loadContracts } from "./contracts.js";
@@ -66,7 +66,8 @@ function cmdScan(repoPath: string | undefined, opts: { watch?: boolean }): void 
   const { nodes, edges } = scan(repoRoot);
   const checkIssues = runChecks(nodes, edges);
   const { contracts, issues: contractIssues } = loadContracts(repoRoot);
-  const issues = [...checkIssues, ...contractIssues];
+  const driftIssues = checkContractDrift(contracts, nodes);
+  const issues = [...checkIssues, ...contractIssues, ...driftIssues];
   const features = buildFeatures(nodes, issues);
   const commit = getCommit(repoRoot);
 

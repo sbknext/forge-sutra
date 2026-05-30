@@ -2,4 +2,3 @@
 ## endpoints
 - GET /api/greet
 - POST /api/greet
-- DELETE /api/greet

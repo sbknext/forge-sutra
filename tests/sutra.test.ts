@@ -15,7 +15,7 @@ import { describe, it, expect } from "vitest";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { scan } from "../src/scanner.js";
-import { runChecks } from "../src/checks.js";
+import { runChecks, checkContractDrift } from "../src/checks.js";
 import { buildFeatures } from "../src/features.js";
 import { loadContracts } from "../src/contracts.js";
 import type { SutraNode, SutraEdge, SutraIssue } from "../src/types.js";
@@ -30,6 +30,7 @@ const EXTERNAL = path.resolve(__dirname, "fixtures/external");
 const DYNAMIC = path.resolve(__dirname, "fixtures/dynamic");
 const DYNAMIC_MISMATCH = path.resolve(__dirname, "fixtures/dynamic-mismatch");
 const CONTRACT_DECLARED = path.resolve(__dirname, "fixtures/contract-declared");
+const CONTRACT_CLEAN = path.resolve(__dirname, "fixtures/contract-clean");
 const CONTRACT_PARSE_ERROR = path.resolve(__dirname, "fixtures/contract-parse-error");
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -483,12 +484,83 @@ describe("loadContracts — contract-declared fixture", () => {
     const methods = contracts[0]!.endpoints.map((e) => `${e.method} ${e.path}`);
     expect(methods).toContain("GET /api/greet");
     expect(methods).toContain("POST /api/greet");
+    expect(methods).toContain("DELETE /api/greet");
   });
 
   it("scan + runChecks regression unchanged (zero structural issues)", () => {
     const { nodes, edges } = scan(CONTRACT_DECLARED);
     const issues = runChecks(nodes, edges);
     expect(issues).toHaveLength(0);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 13. CONTRACT DRIFT — declared vs observed routes (SUTRA-2.2)
+// ═════════════════════════════════════════════════════════════════════════════
+describe("checkContractDrift — contract-declared fixture (missing route)", () => {
+  it("flags contract_missing_route for declared endpoint with no route node", () => {
+    const { nodes } = scan(CONTRACT_DECLARED);
+    const { contracts } = loadContracts(CONTRACT_DECLARED);
+    const drift = checkContractDrift(contracts, nodes);
+    const missing = drift.filter((i) => i.kind === "contract_missing_route");
+    expect(missing.length).toBeGreaterThan(0);
+    const deleteMissing = missing.find(
+      (i) => i.node.includes("DELETE") && i.node.includes("/api/greet"),
+    );
+    expect(
+      deleteMissing,
+      "DELETE /api/greet declared but not implemented should fire contract_missing_route",
+    ).toBeDefined();
+    expect(deleteMissing!.severity).toBe("error");
+  });
+
+  it("does not flag GET or POST /api/greet when route handlers exist", () => {
+    const { nodes } = scan(CONTRACT_DECLARED);
+    const { contracts } = loadContracts(CONTRACT_DECLARED);
+    const drift = checkContractDrift(contracts, nodes);
+    const missing = drift.filter((i) => i.kind === "contract_missing_route");
+    expect(missing.find((i) => i.node.includes("GET /api/greet"))).toBeUndefined();
+    expect(missing.find((i) => i.node.includes("POST /api/greet"))).toBeUndefined();
+  });
+});
+
+describe("checkContractDrift — contract-clean fixture (fully aligned)", () => {
+  it("returns zero contract drift issues when contract matches routes", () => {
+    const { nodes } = scan(CONTRACT_CLEAN);
+    const { contracts } = loadContracts(CONTRACT_CLEAN);
+    const drift = checkContractDrift(contracts, nodes);
+    const contractIssues = drift.filter(
+      (i) => i.kind === "contract_missing_route" || i.kind === "contract_undeclared_route",
+    );
+    expect(contractIssues).toHaveLength(0);
+  });
+});
+
+describe("checkContractDrift — contract-declared fixture (undeclared route)", () => {
+  it("warns contract_undeclared_route when route exists but not in contract", () => {
+    const { nodes } = scan(CONTRACT_DECLARED);
+    const { contracts } = loadContracts(CONTRACT_DECLARED);
+    const drift = checkContractDrift(contracts, nodes);
+    const undeclared = drift.filter((i) => i.kind === "contract_undeclared_route");
+    expect(undeclared.length).toBeGreaterThan(0);
+    const pingUndeclared = undeclared.find(
+      (i) => i.node.includes("GET") && i.node.includes("/api/ping"),
+    );
+    expect(
+      pingUndeclared,
+      "GET /api/ping route not in contract should fire contract_undeclared_route",
+    ).toBeDefined();
+    expect(pingUndeclared!.severity).toBe("warn");
+  });
+});
+
+describe("checkContractDrift — clean fixture (no contract file)", () => {
+  it("returns zero contract drift issues when no feature.sutra.md present", () => {
+    const { nodes } = scan(CLEAN);
+    const { contracts } = loadContracts(CLEAN);
+    expect(contracts).toHaveLength(0);
+    const drift = checkContractDrift(contracts, nodes);
+    expect(drift).toHaveLength(0);
   });
 });
 

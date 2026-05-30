@@ -20,7 +20,9 @@ export type IssueKind =
   | "orphaned_endpoint"
   | "missing_handler"
   | "dangling_test_ref"
-  | "contract_parse_error";
+  | "contract_parse_error"
+  | "contract_missing_route"
+  | "contract_undeclared_route";
 
 export interface SutraNode {
   /** Stable deterministic id: `relative/path#symbol`. */

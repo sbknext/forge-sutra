@@ -4,7 +4,7 @@
  * These are approximations to guide human review, not definitive bug reports.
  */
 
-import type { SutraNode, SutraEdge, SutraIssue } from "./types.js";
+import type { SutraNode, SutraEdge, SutraIssue, SutraContract } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -334,6 +334,80 @@ function checkDanglingTestRefs(
       feature: featureOf(nodeMap, edge.from),
       message: `Test references '${edge.to}' which no longer exists in the repo.`,
     });
+  }
+
+  return issues;
+}
+
+// ---------------------------------------------------------------------------
+// Check 4 — contract drift (declared vs observed routes)
+// ---------------------------------------------------------------------------
+
+/**
+ * Compare author-declared endpoints in feature.sutra.md against route nodes
+ * in the graph. Candidate static comparison only — not runtime verification.
+ */
+export function checkContractDrift(
+  contracts: SutraContract[],
+  nodes: SutraNode[],
+): SutraIssue[] {
+  if (contracts.length === 0) return [];
+
+  const routeDefs: Array<{ method: string; path: string; feature: string }> = [];
+  for (const n of nodes) {
+    if (n.type !== "endpoint" && n.type !== "route") continue;
+    const def = parseEndpointDef(n);
+    if (def) routeDefs.push({ ...def, feature: n.feature });
+  }
+
+  const declared: Array<{ method: string; path: string; feature: string }> = [];
+  for (const c of contracts) {
+    for (const ep of c.endpoints) {
+      declared.push({ method: ep.method, path: ep.path, feature: c.feature });
+    }
+  }
+
+  const seen = new Set<string>();
+  const issues: SutraIssue[] = [];
+
+  for (const ep of declared) {
+    const key = `${ep.method} ${normalisePath(ep.path)}`;
+    if (seen.has(`missing:${key}`)) continue;
+
+    const matched = routeDefs.some(
+      (def) => def.method === ep.method && pathMatches(ep.path, def.path),
+    );
+
+    if (!matched) {
+      seen.add(`missing:${key}`);
+      issues.push({
+        severity: "error",
+        kind: "contract_missing_route",
+        node: `${ep.method} ${ep.path}`,
+        feature: ep.feature,
+        message: `Contract declares ${ep.method} ${ep.path} but no route handler defines it.`,
+      });
+    }
+  }
+
+  for (const def of routeDefs) {
+    const key = `${def.method} ${normalisePath(def.path)}`;
+    if (seen.has(`undeclared:${key}`)) continue;
+
+    const matched = declared.some(
+      (ep) => ep.method === def.method && pathMatches(ep.path, def.path),
+    );
+
+    if (!matched) {
+      seen.add(`undeclared:${key}`);
+      issues.push({
+        severity: "warn",
+        kind: "contract_undeclared_route",
+        node: `${def.method} ${def.path}`,
+        feature: def.feature,
+        message: `Route ${def.method} ${def.path} exists but is not declared in feature.sutra.md.`,
+      });
+    }
   }
 
   return issues;

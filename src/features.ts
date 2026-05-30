@@ -38,8 +38,27 @@ const SIGNAL_ORDER = [
 
 export interface BuildFeaturesOptions {
   contracts?: SutraContract[];
-  /** Per-feature tested flag from test-coverage mapping (Story 2.6). */
-  testedByFeature?: Map<string, boolean>;
+}
+
+function computeTestLinkage(
+  featureNodeIds: Set<string>,
+  edges: SutraEdge[],
+  allNodeIds: Set<string>,
+): { test_edge_count: number; test_node_ids: string[]; tested: boolean } {
+  const testNodeIds = new Set<string>();
+  let count = 0;
+  for (const e of edges) {
+    if (e.kind !== "tests") continue;
+    if (!allNodeIds.has(e.to)) continue;
+    if (!featureNodeIds.has(e.to)) continue;
+    count++;
+    testNodeIds.add(e.from);
+  }
+  return {
+    test_edge_count: count,
+    test_node_ids: [...testNodeIds].sort(),
+    tested: count > 0,
+  };
 }
 
 export interface ComputeHealthContext {
@@ -231,18 +250,21 @@ export function buildFeatures(
   const hasContractData =
     (opts.contracts?.length ?? 0) > 0 ||
     issues.some((i) => CONTRACT_KINDS.has(i.kind));
-  const hasTestCoverageData = opts.testedByFeature !== undefined;
+  const hasTestCoverageData = true;
+  const allNodeIds = new Set(nodes.map((n) => n.id));
 
   const features: SutraFeature[] = [];
   for (const [id, node_ids] of featureNodes) {
     const featureIssues = issuesByFeature.get(id) ?? [];
+    const featureNodeIdSet = new Set(node_ids);
+    const testLinkage = computeTestLinkage(featureNodeIdSet, edges, allNodeIds);
     const health = computeFeatureHealth({
       featureIssues,
       nodeCount: node_ids.length,
       hasConfidenceData,
       hasContractData,
       hasTestCoverageData,
-      tested: opts.testedByFeature?.get(id),
+      tested: testLinkage.tested,
     });
 
     features.push({
@@ -252,6 +274,7 @@ export function buildFeatures(
       node_ids,
       issue_count: issueCount.get(id) ?? 0,
       health,
+      ...testLinkage,
     });
   }
 

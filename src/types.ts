@@ -1,7 +1,7 @@
 // graph.json contract — THE single source of truth. Every consumer reads this.
 // Phase 0. Keep ids stable + deterministic so future phases can diff scans.
 
-export const GRAPH_VERSION = 4;
+export const GRAPH_VERSION = 5;
 
 /**
  * How a graph element was derived:
@@ -55,7 +55,8 @@ export type IssueKind =
   | "contract_missing_route"
   | "contract_undeclared_route"
   | "cross_repo_orphan"
-  | "hook_failure";
+  | "hook_failure"
+  | "untested_feature";
 
 export interface SutraNode {
   /** Stable deterministic id: `relative/path#symbol`. */
@@ -130,6 +131,12 @@ export interface SutraFeature {
   ai_summary?: string;
   /** How the display label was derived — heuristic default, ai-inferred when --ai succeeds. */
   label_source?: "heuristic" | "ai-inferred";
+  /** Count of confirmed tests edges into this feature. Static linkage, NOT runtime coverage. */
+  test_edge_count: number;
+  /** Distinct test node ids referencing into this feature (sorted). */
+  test_node_ids: string[];
+  /** True iff at least one confirmed tests edge resolves into this feature. Static presence only. */
+  tested: boolean;
 }
 
 /** Author-declared endpoint from feature.sutra.md (intent, not ground truth). */

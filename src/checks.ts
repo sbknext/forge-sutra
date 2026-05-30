@@ -4,7 +4,7 @@
  * These are approximations to guide human review, not definitive bug reports.
  */
 
-import type { SutraNode, SutraEdge, SutraIssue, SutraContract, Provenance } from "./types.js";
+import type { SutraNode, SutraEdge, SutraIssue, SutraContract, SutraFeature, Provenance } from "./types.js";
 import { confidenceForProvenance } from "./types.js";
 import {
   pathMatches,
@@ -297,6 +297,27 @@ export function checkContractDrift(
   }
 
   return issues;
+}
+
+// ---------------------------------------------------------------------------
+// Check 5 — untested_feature (static test linkage)
+// ---------------------------------------------------------------------------
+
+/**
+ * Emit info issues for features with zero confirmed tests edges.
+ * Static presence only — not runtime/line coverage.
+ */
+export function checkUntestedFeatures(features: SutraFeature[]): SutraIssue[] {
+  return features
+    .filter((f) => !f.tested)
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map((f) => ({
+      severity: "info" as const,
+      kind: "untested_feature" as const,
+      node: f.id,
+      feature: f.id,
+      message: `Static test linkage: no test references resolve into feature '${f.id}' (not runtime coverage).`,
+    }));
 }
 
 // ---------------------------------------------------------------------------

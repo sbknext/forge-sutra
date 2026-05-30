@@ -12,6 +12,7 @@ export const SUPPORTED_MIGRATIONS: Array<{ from: number; to: number }> = [
   { from: 1, to: 2 },
   { from: 2, to: 3 },
   { from: 3, to: 4 },
+  { from: 4, to: 5 },
 ];
 
 /** Migrate a graph object in-memory. Returns migrated graph. */
@@ -62,6 +63,19 @@ export function migrateGraph(raw: Record<string, unknown>): SutraGraph {
     }
     raw.version = 4;
     version = 4;
+  }
+
+  // v4 → v5: test linkage fields on features
+  if (version === 4) {
+    const g = raw as unknown as SutraGraph;
+    const nodes = Array.isArray(g.nodes) ? g.nodes : [];
+    const edges = Array.isArray(g.edges) ? g.edges : [];
+    const issueList = Array.isArray(g.issues) ? g.issues : [];
+    const contracts = Array.isArray(g.contracts) ? g.contracts : [];
+    raw.features = buildFeatures(nodes, issueList, edges, { contracts });
+    if (!Array.isArray(raw.flows)) raw.flows = [];
+    raw.version = 5;
+    version = 5;
   }
 
   if (version !== GRAPH_VERSION) {

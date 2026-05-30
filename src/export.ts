@@ -66,12 +66,16 @@ export function exportGraphSchema(): string {
       },
       SutraFeature: {
         type: "object",
-        required: ["id", "label", "node_ids", "issue_count", "health"],
+        required: ["id", "label", "node_ids", "issue_count", "health", "test_edge_count", "test_node_ids", "tested"],
         properties: {
           id: { type: "string" },
           label: { type: "string" },
           node_ids: { type: "array", items: { type: "string" } },
           issue_count: { type: "integer" },
+          test_edge_count: { type: "integer" },
+          test_node_ids: { type: "array", items: { type: "string" } },
+          tested: { type: "boolean" },
+          label_source: { enum: ["heuristic", "ai-inferred"] },
           health: {
             type: "object",
             required: ["score", "band", "inputs", "available_signals"],

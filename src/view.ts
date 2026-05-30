@@ -295,7 +295,7 @@ export function renderView(
     <span class="badge ${hcls}" title="Heuristic structural health score">${healthScore} · ${esc(healthBand)}</span>
   </div>
   ${aiSummary}
-  <div class="card-meta">${feat.node_ids.length} node${feat.node_ids.length !== 1 ? "s" : ""} &middot; ${ec} edge${ec !== 1 ? "s" : ""} &middot; ${feat.issue_count} issue${feat.issue_count !== 1 ? "s" : ""}</div>
+  <div class="card-meta">${feat.node_ids.length} node${feat.node_ids.length !== 1 ? "s" : ""} &middot; ${ec} edge${ec !== 1 ? "s" : ""} &middot; ${feat.issue_count} issue${feat.issue_count !== 1 ? "s" : ""}${feat.tested !== undefined ? ` &middot; tests: ${feat.test_edge_count ?? 0} (static)` : ""}${feat.tested === false ? ' &middot; <span class="untested-tag">untested</span>' : ""}</div>
   <div class="card-health-note">Heuristic structural health score — not runtime correctness</div>
 </div>`;
     })
@@ -347,6 +347,7 @@ header .counts span { background: #334155; padding: 0.15rem 0.6rem; border-radiu
 .badge-health-red { background: #fee2e2; color: #991b1b; }
 .badge-ai { background: #ede9fe; color: #5b21b6; font-size: 0.65rem; margin-left: 0.25rem; }
 .card-ai-summary { font-size: 0.78rem; color: #64748b; margin: 0.25rem 0 0.35rem; line-height: 1.35; }
+.untested-tag { color: #64748b; font-style: italic; }
 .card-health-note { font-size: 0.68rem; color: #94a3b8; margin-top: 0.35rem; font-style: italic; }
 .card-meta { font-size: 0.78rem; color: #64748b; }
 .detail-panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 1.25rem; }

@@ -137,7 +137,7 @@ When `GRAPH_VERSION` bumps, run `forge-sutra migrate` on cached graphs before di
 
 ```jsonc
 {
-  "version": 4,           // GRAPH_VERSION constant; bump = breaking change
+  "version": 5,           // GRAPH_VERSION constant; bump = breaking change
   "repo": "my-repo",      // basename of the scanned directory
   "scanned_at": "...",    // ISO 8601 UTC timestamp
   "commit": "abc1234",    // short git hash, or "unknown"
@@ -248,6 +248,7 @@ Request flows are **code-derived paths** from entry (route/component) through re
 | `contract_missing_route` | Declared endpoint in contract has no matching route in graph (error). |
 | `contract_undeclared_route` | Route exists but not declared in contract when contract file present (warn). |
 | `cross_repo_orphan` | Client graph HTTP call has no matching route in server graph (warn, via `reconcile`). |
+| `untested_feature` | No confirmed `tests` edge resolves into the feature (info). **Static presence only — not runtime/line coverage.** |
 
 ---
 
@@ -259,7 +260,7 @@ Sutra is a **static, heuristic approximation**. Read this before acting on any f
 - **Candidate results, not complete.** Dynamic imports, aliased imports, runtime-generated routes, and unresolved template-literal concatenation may produce false positives or misses.
 - **Static approximation.** No code is executed. No type inference beyond what ts-morph surfaces.
 - **Not auto-debug / auto-test.** Sutra does not fix code, run tests, or validate runtime behavior. Scaffold output is candidate stubs only.
-- **Review before acting.** Every issue is a candidate for human review. The HTML view labels all results as "heuristic / candidate".
+- **Test linkage is static, not coverage.** `test_edge_count` / `tested` count confirmed `tests` edges in the graph. They do NOT measure line coverage, branch coverage, or test pass/fail.
 
 Known limitations:
 - **External hosts:** Known external API hosts (Telegram, Stripe, etc.) are suppressed via allowlist + optional `.sutra/external-hosts.json`. Unknown external hosts may still false-positive.

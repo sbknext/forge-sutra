@@ -608,8 +608,8 @@ describe("confidence & provenance (Story 1.3)", () => {
     "ai-inferred",
   ]);
 
-  it("GRAPH_VERSION is 4 after flows schema bump", () => {
-    expect(GRAPH_VERSION).toBe(4);
+  it("GRAPH_VERSION is 5 after flows schema bump", () => {
+    expect(GRAPH_VERSION).toBe(5);
   });
 
   it("runChecks issues have provenance in union and confidence in [0,1]", () => {
@@ -731,12 +731,16 @@ describe("confidence & provenance (Story 1.3)", () => {
 // 15. FEATURE HEALTH — Story 2.4
 // ═════════════════════════════════════════════════════════════════════════════
 describe("feature health — clean fixture (Story 2.4)", () => {
-  it("zero-issue feature scores 100 / green", () => {
+  it("zero-issue tested feature scores 100 / green", () => {
     const { nodes, edges } = scan(CLEAN);
     const issues = runChecks(nodes, edges);
     const features = buildFeatures(nodes, issues, edges);
     expect(features.length).toBeGreaterThan(0);
-    for (const feat of features) {
+    const testedNoIssues = features.filter(
+      (f) => f.issue_count === 0 && f.tested,
+    );
+    expect(testedNoIssues.length).toBeGreaterThan(0);
+    for (const feat of testedNoIssues) {
       expect(feat.health.score).toBe(100);
       expect(feat.health.band).toBe("green");
       const issueInput = feat.health.inputs.find((i) => i.signal === "issue_load");
@@ -782,22 +786,19 @@ describe("feature health — band thresholds", () => {
 });
 
 describe("feature health — optional signal gating", () => {
-  it("confidence/contract/coverage unavailable when data absent", () => {
+  it("confidence/contract unavailable; test_coverage available from tested field", () => {
     const { nodes, edges } = scan(CLEAN);
     const issues = runChecks(nodes, edges);
     const features = buildFeatures(nodes, issues, edges);
     const feat = features[0]!;
-    const optional = ["confidence", "contract_drift", "test_coverage"];
-    for (const sig of optional) {
+    for (const sig of ["confidence", "contract_drift"]) {
       const input = feat.health.inputs.find((i) => i.signal === sig);
       expect(input?.available).toBe(false);
       expect(input?.penalty).toBe(0);
-      expect(feat.health.available_signals).not.toContain(sig);
     }
-    const alwaysOn = feat.health.inputs.filter((i) =>
-      ["issue_load", "orphan_ratio"].includes(i.signal),
-    );
-    expect(alwaysOn.every((i) => i.available)).toBe(true);
+    const testInput = feat.health.inputs.find((i) => i.signal === "test_coverage");
+    expect(testInput?.available).toBe(true);
+    expect(feat.health.available_signals).toContain("test_coverage");
   });
 });
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Post-merge helper: attach flows[] and write link.json for a graph.json path.
- * Usage: node attach-flows-link.mjs <graph.json> [artifactDir]
+ * Usage: node attach-flows-link.mjs GRAPH_PATH [artifactDir]
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -13,7 +13,7 @@ const graphPath = path.resolve(process.argv[2] ?? "");
 const artifactDir = path.resolve(process.argv[3] ?? path.dirname(path.dirname(graphPath)));
 
 if (!graphPath || !fs.existsSync(graphPath)) {
-  console.error("Usage: node attach-flows-link.mjs <graph.json> [artifactDir]");
+  console.error("Usage: node attach-flows-link.mjs GRAPH_PATH [artifactDir]");
   process.exit(2);
 }
 

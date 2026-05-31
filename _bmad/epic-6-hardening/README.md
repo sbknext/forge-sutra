@@ -1,4 +1,4 @@
-# Epic 6 — Hardening (Python / Frappe parity + honest viewer)
+# Epic 6 — Phase 8 Hardening (Python / Frappe parity + honest viewer)
 
 > **Theme: make Python real, harden Frappe — no new surface.** Forge Sutra grew wide (export,
 > hooks, migrate, viewer, npm publish) but is **shallow on Python/Frappe**: the extractor emits

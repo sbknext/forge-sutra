@@ -38,16 +38,16 @@
             tab.title = "link.json version mismatch — re-run link";
             return;
           }
-          if (!link.edges || link.edges.length === 0 || !link.repos || link.repos.length < 2) {
-            tab.classList.add("disabled");
-            tab.title = "Run `sutra link <client> <server>` to build the ecosystem map";
-            return;
-          }
+          tab._sutraLink = link;
           tab.classList.remove("disabled");
           tab.title = "Cross-repo ecosystem map";
           tab.onclick = function () {
             window.SutraEcosystem.show(link);
           };
+        })
+        .catch(function () {
+          tab.classList.add("disabled");
+          tab.title = "Could not load link.json";
         });
     },
 
@@ -58,17 +58,27 @@
       root.classList.remove("hidden");
 
       var showUnresolved = false;
+      var edges = link.edges || [];
+      var repos = link.repos || [];
 
       function render() {
         var html =
           '<div class="ecosystem">' +
           '<div class="drilldown-header">' +
           '<button type="button" id="eco-back">← Back to features</button>' +
-          "<h2>Ecosystem map</h2>" +
-          '<label><input type="checkbox" id="eco-unresolved"> Show unresolved links</label>' +
-          "</div>";
+          "<h2>Ecosystem map</h2>";
 
-        link.repos.forEach(function (repo) {
+        if (edges.length === 0 || repos.length < 2) {
+          html +=
+            '<p class="meta eco-empty">link.json is present but has no cross-repo edges yet. Run <code>sutra link &lt;client-repo&gt; &lt;server-repo&gt;</code> after scanning both repos.</p>';
+        } else {
+          html +=
+            '<label><input type="checkbox" id="eco-unresolved"> Show unresolved links</label>';
+        }
+
+        html += "</div>";
+
+        repos.forEach(function (repo) {
           html +=
             '<div class="eco-cluster"><h3>' +
             esc(repo.name) +
@@ -76,47 +86,56 @@
             "</h3><p class='meta'>Cross-repo endpoints only — heuristic / candidate</p></div>";
         });
 
-        html += '<div class="eco-links"><h3>Cross-repo links</h3><ul>';
-        link.edges
-          .filter(function (e) {
-            return showUnresolved || e.resolution !== "unresolved";
-          })
-          .forEach(function (edge) {
-            var cls =
-              edge.resolution === "confirmed"
-                ? "link-confirmed"
-                : edge.resolution === "broken"
-                  ? "link-broken"
-                  : "link-unresolved";
-            var src = splitCrossRepoId(edge.from)[0];
-            var dst = splitCrossRepoId(edge.to)[0];
-            html +=
-              '<li class="' +
-              cls +
-              '"><strong>' +
-              esc(edge.method) +
-              " " +
-              esc(edge.path) +
-              "</strong> · " +
-              esc(src) +
-              " → " +
-              esc(dst) +
-              " · <span class='badge'>" +
-              esc(edge.resolution) +
-              "</span> · recon: n/a</li>";
-          });
-        html += "</ul></div></div>";
+        html += '<div class="eco-links"><h3>Cross-repo links</h3>';
+        if (edges.length === 0) {
+          html += '<p class="meta">No links to display.</p>';
+        } else {
+          html += "<ul>";
+          edges
+            .filter(function (e) {
+              return showUnresolved || e.resolution !== "unresolved";
+            })
+            .forEach(function (edge) {
+              var cls =
+                edge.resolution === "confirmed"
+                  ? "link-confirmed"
+                  : edge.resolution === "broken"
+                    ? "link-broken"
+                    : "link-unresolved";
+              var src = splitCrossRepoId(edge.from)[0];
+              var dst = splitCrossRepoId(edge.to)[0];
+              html +=
+                '<li class="' +
+                cls +
+                '"><strong>' +
+                esc(edge.method) +
+                " " +
+                esc(edge.path) +
+                "</strong> · " +
+                esc(src) +
+                " → " +
+                esc(dst) +
+                " · <span class='badge'>" +
+                esc(edge.resolution) +
+                "</span></li>";
+            });
+          html += "</ul>";
+        }
+        html += "</div></div>";
 
         root.innerHTML = html;
         document.getElementById("eco-back").onclick = function () {
           root.classList.add("hidden");
           document.getElementById("view-grid").classList.remove("hidden");
         };
-        document.getElementById("eco-unresolved").checked = showUnresolved;
-        document.getElementById("eco-unresolved").onchange = function (ev) {
-          showUnresolved = ev.target.checked;
-          render();
-        };
+        var unresolved = document.getElementById("eco-unresolved");
+        if (unresolved) {
+          unresolved.checked = showUnresolved;
+          unresolved.onchange = function (ev) {
+            showUnresolved = ev.target.checked;
+            render();
+          };
+        }
       }
 
       render();

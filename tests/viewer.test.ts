@@ -9,7 +9,13 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { startViewerServer } from "../src/viewer/server.js";
 import { renderView } from "../src/view.js";
-import { GRAPH_VERSION, SUTRA_DIR, GRAPH_FILE, type SutraGraph } from "../src/types.js";
+import {
+  GRAPH_VERSION,
+  LINK_VERSION,
+  SUTRA_DIR,
+  GRAPH_FILE,
+  type SutraGraph,
+} from "../src/types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = path.resolve(__dirname, "fixtures/viewer");
@@ -70,6 +76,18 @@ describe("viewer — Section 10 app shell (Story 3.1)", () => {
     expect(html).toContain('id="feature-grid"');
     expect(html).toContain("Heuristic");
     expect(html).toContain("candidate");
+    expect(html).toContain("/vendor/cytoscape.min.js");
+    expect(html).toContain(String(LINK_VERSION));
+  });
+
+  it("serves vendored cytoscape bundle", async () => {
+    server = await startViewerServer(FIXTURE_DIR, { port: 0 });
+    const res = await fetch(`${server.url}vendor/cytoscape.min.js`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("javascript");
+    const body = await res.text();
+    expect(body.length).toBeGreaterThan(1000);
+    expect(body).toContain("cytoscape");
   });
 
   it("returns 404 JSON when graph.json missing", async () => {

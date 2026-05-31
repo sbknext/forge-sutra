@@ -6,7 +6,7 @@
 <title>Sutra Viewer</title>
 <link rel="stylesheet" href="/styles.css">
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/cytoscape@3.28.1/cytoscape.min.js"></script>
+<script src="/vendor/cytoscape.min.js"></script>
 </head>
 <body>
 
@@ -53,7 +53,7 @@
 <div id="view-drilldown" class="hidden"></div>
 <div id="view-ecosystem" class="hidden"></div>
 
-<script>window.SUTRA_GRAPH_VERSION = __GRAPH_VERSION__; window.SUTRA_LINK_VERSION = 0;</script>
+<script>window.SUTRA_GRAPH_VERSION = __GRAPH_VERSION__; window.SUTRA_LINK_VERSION = __LINK_VERSION__;</script>
 <script src="/ecosystem.js"></script>
 <script src="/drilldown.js"></script>
 <script src="/app.js"></script>

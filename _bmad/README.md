@@ -70,6 +70,22 @@ local-first. See **[epic-5-deferred/README.md](epic-5-deferred/README.md)**.
 | [4.3](epic-5-deferred/story-4.3-forge-sdk-extraction.md) | Forge SDK primitive extraction | Deferred | forge coupling |
 | [4.5](epic-5-deferred/story-4.5-hosted-graph-history.md) | Hosted graph history & trends | Deferred | hosted storage |
 
+## Epic 6 — Hardening (Python/Frappe parity + honest viewer)
+**Make Python real, harden Frappe — no new surface.** Closes the two gaps a real Frappe scan
+(swifter-flows) exposed: the Python extractor produced imports-only edges → flow tracing empty →
+viewer showed an import star, not a directed start→end flow; and cross-repo `link.json` was never
+generated → Ecosystem tab 404. See **[epic-6-hardening/README.md](epic-6-hardening/README.md)**.
+
+| Story | Title | Status | Depends on |
+|---|---|---|---|
+| [6.1](epic-6-hardening/stories/story-6.1-python-calls-edges.md) | Python `calls` edges — diagnose + fix call resolution | Draft | none |
+| [6.2](epic-6-hardening/stories/story-6.2-python-local-imports-and-http-edges.md) | Local-import resolution + `http`/endpoint edges | Draft | 6.1 |
+| [6.3](epic-6-hardening/stories/story-6.3-frappe-semantics.md) | Frappe semantics: hooks.py, doc_events, scheduler, DocType, whitelist | Draft | 6.1 |
+| [6.4](epic-6-hardening/stories/story-6.4-flow-tracing-python-parity.md) | Flow tracing verified on Python (directed start→end) | Draft | 6.1, 6.2, 6.3 |
+| [6.5](epic-6-hardening/stories/story-6.5-viewer-absent-feature-graceful.md) | Viewer: absent link.json/events ≠ console error | Draft | none |
+| [6.6](epic-6-hardening/stories/story-6.6-link-json-generation.md) | `link.json` generation (cross-repo / bench-merge) | Draft | 6.5 |
+| [6.7](epic-6-hardening/stories/story-6.7-self-ci-dogfood.md) | Self-CI dogfood — `scan --check` on forge-sutra PRs | Draft | none |
+
 ---
 
 ## Remaining in-scope work (the build queue)
@@ -79,6 +95,11 @@ In order, single-repo only:
 **Enrich:** 2.5 flow tracing → 2.3 AI inference → 2.6 test-coverage → 1.5 incremental scan
 **Viewer (goal):** 3.1 shell → 3.2 cards → 3.3 drill-down → 3.5 live → 3.6 search/filter/share
 **Stack reach:** 4.1 lang-agnostic core → 4.2 Python/Frappe extractor → 4.4 CI check
+**Hardening (Epic 6 — Python/Frappe parity):** 6.1 calls edges → 6.2 imports+http → 6.3 Frappe semantics → 6.4 flow parity → 6.5 viewer graceful → 6.6 link.json → 6.7 self-CI
+
+> **Note on status:** Epics 1–4 statuses above are the original plan baseline. The executor
+> (Cursor) has since shipped much of 1–4 and the viewer directly to `main` — treat the repo's git
+> history as the source of truth for what's actually built. Epic 6 is the current focus.
 
 ## Contributing
 

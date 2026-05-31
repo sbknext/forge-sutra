@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "repo": "client-app",
+  "scanned_at": "2026-05-30T00:00:00.000Z",
+  "commit": "client1",
+  "nodes": [
+    {
+      "id": "lib/client.ts",
+      "type": "module",
+      "name": "client.ts",
+      "file": "lib/client.ts",
+      "line": 1,
+      "data_shape": null,
+      "feature": "lib"
+    },
+    {
+      "id": "lib/client.ts#fetchUsers",
+      "type": "endpoint",
+      "name": "GET /api/users",
+      "file": "lib/client.ts",
+      "line": 2,
+      "data_shape": null,
+      "feature": "lib"
+    },
+    {
+      "id": "lib/client.ts#fetchMissing",
+      "type": "endpoint",
+      "name": "POST /api/missing",
+      "file": "lib/client.ts",
+      "line": 3,
+      "data_shape": null,
+      "feature": "lib"
+    }
+  ],
+  "edges": [
+    {
+      "from": "lib/client.ts#fetchUsers",
+      "to": "http:GET /api/users",
+      "kind": "http"
+    },
+    {
+      "from": "lib/client.ts#fetchMissing",
+      "to": "http:POST /api/missing",
+      "kind": "http"
+    }
+  ],
+  "issues": [],
+  "features": [],
+  "contracts": []
+}

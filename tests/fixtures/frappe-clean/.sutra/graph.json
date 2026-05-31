@@ -1,0 +1,526 @@
+{
+  "version": 6,
+  "repo": "frappe-clean",
+  "scanned_at": "2026-05-31T12:26:18.816Z",
+  "commit": "a42032c",
+  "nodes": [
+    {
+      "id": "external-hosts#EXTERNAL api.telegram.org",
+      "type": "route",
+      "name": "EXTERNAL api.telegram.org",
+      "file": "external-hosts",
+      "line": 1,
+      "data_shape": "EXTERNAL api.telegram.org",
+      "feature": "external",
+      "language": "ts",
+      "provenance": "heuristic"
+    },
+    {
+      "id": "external-hosts#EXTERNAL hooks.stripe.com",
+      "type": "route",
+      "name": "EXTERNAL hooks.stripe.com",
+      "file": "external-hosts",
+      "line": 1,
+      "data_shape": "EXTERNAL hooks.stripe.com",
+      "feature": "external",
+      "language": "ts",
+      "provenance": "heuristic"
+    },
+    {
+      "id": "myapp/api/widget.py",
+      "type": "module",
+      "name": "myapp/api/widget.py",
+      "file": "myapp/api/widget.py",
+      "line": 1,
+      "data_shape": null,
+      "feature": "myapp",
+      "language": "python-frappe"
+    },
+    {
+      "id": "myapp/api/widget.py#get_widget",
+      "type": "endpoint",
+      "name": "myapp.api.widget.get_widget",
+      "file": "myapp/api/widget.py",
+      "line": 7,
+      "data_shape": "str",
+      "feature": "myapp",
+      "provenance": "ast-exact",
+      "language": "python-frappe"
+    },
+    {
+      "id": "myapp/events/handlers.py",
+      "type": "module",
+      "name": "myapp/events/handlers.py",
+      "file": "myapp/events/handlers.py",
+      "line": 1,
+      "data_shape": null,
+      "feature": "myapp",
+      "language": "python-frappe"
+    },
+    {
+      "id": "myapp/events/handlers.py#on_widget_submit",
+      "type": "function",
+      "name": "on_widget_submit",
+      "file": "myapp/events/handlers.py",
+      "line": 1,
+      "data_shape": null,
+      "feature": "myapp",
+      "provenance": "ast-exact",
+      "language": "python-frappe"
+    },
+    {
+      "id": "myapp/jobs/daily_job.py",
+      "type": "module",
+      "name": "myapp/jobs/daily_job.py",
+      "file": "myapp/jobs/daily_job.py",
+      "line": 1,
+      "data_shape": null,
+      "feature": "myapp",
+      "language": "python-frappe"
+    },
+    {
+      "id": "myapp/jobs/daily_job.py#run_daily",
+      "type": "function",
+      "name": "run_daily",
+      "file": "myapp/jobs/daily_job.py",
+      "line": 1,
+      "data_shape": null,
+      "feature": "myapp",
+      "provenance": "ast-exact",
+      "language": "python-frappe"
+    },
+    {
+      "id": "myapp/myapp/doctype/widget/widget.py",
+      "type": "module",
+      "name": "myapp/myapp/doctype/widget/widget.py",
+      "file": "myapp/myapp/doctype/widget/widget.py",
+      "line": 1,
+      "data_shape": null,
+      "feature": "widget",
+      "language": "python-frappe"
+    },
+    {
+      "id": "myapp/myapp/doctype/widget/widget.py#Widget",
+      "type": "handler",
+      "name": "Widget",
+      "file": "myapp/myapp/doctype/widget/widget.py",
+      "line": 3,
+      "data_shape": null,
+      "feature": "widget",
+      "provenance": "ast-exact",
+      "language": "python-frappe"
+    },
+    {
+      "id": "myapp/myapp/doctype/widget/widget.py#Widget.validate",
+      "type": "handler",
+      "name": "Widget.validate",
+      "file": "myapp/myapp/doctype/widget/widget.py",
+      "line": 4,
+      "data_shape": null,
+      "feature": "widget",
+      "provenance": "ast-exact",
+      "language": "python-frappe"
+    },
+    {
+      "id": "myapp/utils/helpers.py",
+      "type": "module",
+      "name": "myapp/utils/helpers.py",
+      "file": "myapp/utils/helpers.py",
+      "line": 1,
+      "data_shape": null,
+      "feature": "myapp",
+      "language": "python-frappe"
+    },
+    {
+      "id": "myapp/utils/helpers.py#load_widget_data",
+      "type": "function",
+      "name": "load_widget_data",
+      "file": "myapp/utils/helpers.py",
+      "line": 4,
+      "data_shape": "str",
+      "feature": "myapp",
+      "provenance": "ast-exact",
+      "language": "python-frappe"
+    },
+    {
+      "id": "hooks.py#doc_events:Widget:on_submit",
+      "type": "handler",
+      "name": "doc_events:Widget:on_submit",
+      "file": "hooks.py",
+      "line": 1,
+      "data_shape": null,
+      "feature": "hooks",
+      "provenance": "heuristic",
+      "language": "python-frappe"
+    },
+    {
+      "id": "hooks.py#scheduler:daily:myapp.jobs.daily_job.run_daily",
+      "type": "handler",
+      "name": "scheduler:daily",
+      "file": "hooks.py",
+      "line": 1,
+      "data_shape": null,
+      "feature": "hooks",
+      "provenance": "heuristic",
+      "language": "python-frappe"
+    },
+    {
+      "id": "external-hosts#EXTERNAL api.telegram.org",
+      "type": "route",
+      "name": "EXTERNAL api.telegram.org",
+      "file": "external-hosts",
+      "line": 1,
+      "data_shape": "EXTERNAL api.telegram.org",
+      "feature": "external",
+      "provenance": "heuristic",
+      "language": "python-frappe"
+    },
+    {
+      "id": "external-hosts#EXTERNAL hooks.stripe.com",
+      "type": "route",
+      "name": "EXTERNAL hooks.stripe.com",
+      "file": "external-hosts",
+      "line": 1,
+      "data_shape": "EXTERNAL hooks.stripe.com",
+      "feature": "external",
+      "provenance": "heuristic",
+      "language": "python-frappe"
+    }
+  ],
+  "edges": [
+    {
+      "from": "myapp/api/widget.py#get_widget",
+      "to": "myapp/utils/helpers.py#load_widget_data",
+      "kind": "calls",
+      "provenance": "ast-exact"
+    },
+    {
+      "from": "myapp/utils/helpers.py#load_widget_data",
+      "to": "http:GET /bot/status|api.telegram.org",
+      "kind": "http",
+      "provenance": "ast-exact"
+    },
+    {
+      "from": "hooks.py#doc_events:Widget:on_submit",
+      "to": "myapp/events/handlers.py#on_widget_submit",
+      "kind": "calls",
+      "provenance": "ast-exact"
+    },
+    {
+      "from": "hooks.py#scheduler:daily:myapp.jobs.daily_job.run_daily",
+      "to": "myapp/jobs/daily_job.py#run_daily",
+      "kind": "calls",
+      "provenance": "ast-exact"
+    }
+  ],
+  "issues": [
+    {
+      "severity": "info",
+      "kind": "untested_feature",
+      "node": "external",
+      "feature": "external",
+      "message": "Static test linkage: no test references resolve into feature 'external' (not runtime coverage)."
+    },
+    {
+      "severity": "info",
+      "kind": "untested_feature",
+      "node": "hooks",
+      "feature": "hooks",
+      "message": "Static test linkage: no test references resolve into feature 'hooks' (not runtime coverage)."
+    },
+    {
+      "severity": "info",
+      "kind": "untested_feature",
+      "node": "myapp",
+      "feature": "myapp",
+      "message": "Static test linkage: no test references resolve into feature 'myapp' (not runtime coverage)."
+    },
+    {
+      "severity": "info",
+      "kind": "untested_feature",
+      "node": "widget",
+      "feature": "widget",
+      "message": "Static test linkage: no test references resolve into feature 'widget' (not runtime coverage)."
+    }
+  ],
+  "features": [
+    {
+      "id": "external",
+      "label": "External",
+      "label_source": "heuristic",
+      "node_ids": [
+        "external-hosts#EXTERNAL api.telegram.org",
+        "external-hosts#EXTERNAL hooks.stripe.com",
+        "external-hosts#EXTERNAL api.telegram.org",
+        "external-hosts#EXTERNAL hooks.stripe.com"
+      ],
+      "issue_count": 1,
+      "health": {
+        "score": 89,
+        "band": "green",
+        "inputs": [
+          {
+            "signal": "issue_load",
+            "available": true,
+            "weight": 0.35,
+            "penalty": 8,
+            "detail": "1 issue(s) weighted by severity, normalized by 4 node(s)"
+          },
+          {
+            "signal": "orphan_ratio",
+            "available": true,
+            "weight": 0.35,
+            "penalty": 0,
+            "detail": "Structural issues (orphan/missing/dangling) vs feature size"
+          },
+          {
+            "signal": "confidence",
+            "available": false,
+            "weight": 0.1,
+            "penalty": 0,
+            "detail": "No confidence data on issues"
+          },
+          {
+            "signal": "contract_drift",
+            "available": false,
+            "weight": 0.1,
+            "penalty": 0,
+            "detail": "No contract drift data"
+          },
+          {
+            "signal": "test_coverage",
+            "available": true,
+            "weight": 0.1,
+            "penalty": 60,
+            "detail": "No test references resolve into this feature (static)"
+          }
+        ],
+        "available_signals": [
+          "issue_load",
+          "orphan_ratio",
+          "test_coverage"
+        ]
+      },
+      "test_edge_count": 0,
+      "test_node_ids": [],
+      "tested": false
+    },
+    {
+      "id": "hooks",
+      "label": "Hooks",
+      "label_source": "heuristic",
+      "node_ids": [
+        "hooks.py#doc_events:Widget:on_submit",
+        "hooks.py#scheduler:daily:myapp.jobs.daily_job.run_daily"
+      ],
+      "issue_count": 1,
+      "health": {
+        "score": 86,
+        "band": "green",
+        "inputs": [
+          {
+            "signal": "issue_load",
+            "available": true,
+            "weight": 0.35,
+            "penalty": 15,
+            "detail": "1 issue(s) weighted by severity, normalized by 2 node(s)"
+          },
+          {
+            "signal": "orphan_ratio",
+            "available": true,
+            "weight": 0.35,
+            "penalty": 0,
+            "detail": "Structural issues (orphan/missing/dangling) vs feature size"
+          },
+          {
+            "signal": "confidence",
+            "available": false,
+            "weight": 0.1,
+            "penalty": 0,
+            "detail": "No confidence data on issues"
+          },
+          {
+            "signal": "contract_drift",
+            "available": false,
+            "weight": 0.1,
+            "penalty": 0,
+            "detail": "No contract drift data"
+          },
+          {
+            "signal": "test_coverage",
+            "available": true,
+            "weight": 0.1,
+            "penalty": 60,
+            "detail": "No test references resolve into this feature (static)"
+          }
+        ],
+        "available_signals": [
+          "issue_load",
+          "orphan_ratio",
+          "test_coverage"
+        ]
+      },
+      "test_edge_count": 0,
+      "test_node_ids": [],
+      "tested": false
+    },
+    {
+      "id": "myapp",
+      "label": "Myapp",
+      "label_source": "heuristic",
+      "node_ids": [
+        "myapp/api/widget.py",
+        "myapp/api/widget.py#get_widget",
+        "myapp/events/handlers.py",
+        "myapp/events/handlers.py#on_widget_submit",
+        "myapp/jobs/daily_job.py",
+        "myapp/jobs/daily_job.py#run_daily",
+        "myapp/utils/helpers.py",
+        "myapp/utils/helpers.py#load_widget_data"
+      ],
+      "issue_count": 1,
+      "health": {
+        "score": 91,
+        "band": "green",
+        "inputs": [
+          {
+            "signal": "issue_load",
+            "available": true,
+            "weight": 0.35,
+            "penalty": 4,
+            "detail": "1 issue(s) weighted by severity, normalized by 8 node(s)"
+          },
+          {
+            "signal": "orphan_ratio",
+            "available": true,
+            "weight": 0.35,
+            "penalty": 0,
+            "detail": "Structural issues (orphan/missing/dangling) vs feature size"
+          },
+          {
+            "signal": "confidence",
+            "available": false,
+            "weight": 0.1,
+            "penalty": 0,
+            "detail": "No confidence data on issues"
+          },
+          {
+            "signal": "contract_drift",
+            "available": false,
+            "weight": 0.1,
+            "penalty": 0,
+            "detail": "No contract drift data"
+          },
+          {
+            "signal": "test_coverage",
+            "available": true,
+            "weight": 0.1,
+            "penalty": 60,
+            "detail": "No test references resolve into this feature (static)"
+          }
+        ],
+        "available_signals": [
+          "issue_load",
+          "orphan_ratio",
+          "test_coverage"
+        ]
+      },
+      "test_edge_count": 0,
+      "test_node_ids": [],
+      "tested": false
+    },
+    {
+      "id": "widget",
+      "label": "Widget",
+      "label_source": "heuristic",
+      "node_ids": [
+        "myapp/myapp/doctype/widget/widget.py",
+        "myapp/myapp/doctype/widget/widget.py#Widget",
+        "myapp/myapp/doctype/widget/widget.py#Widget.validate"
+      ],
+      "issue_count": 1,
+      "health": {
+        "score": 88,
+        "band": "green",
+        "inputs": [
+          {
+            "signal": "issue_load",
+            "available": true,
+            "weight": 0.35,
+            "penalty": 10,
+            "detail": "1 issue(s) weighted by severity, normalized by 3 node(s)"
+          },
+          {
+            "signal": "orphan_ratio",
+            "available": true,
+            "weight": 0.35,
+            "penalty": 0,
+            "detail": "Structural issues (orphan/missing/dangling) vs feature size"
+          },
+          {
+            "signal": "confidence",
+            "available": false,
+            "weight": 0.1,
+            "penalty": 0,
+            "detail": "No confidence data on issues"
+          },
+          {
+            "signal": "contract_drift",
+            "available": false,
+            "weight": 0.1,
+            "penalty": 0,
+            "detail": "No contract drift data"
+          },
+          {
+            "signal": "test_coverage",
+            "available": true,
+            "weight": 0.1,
+            "penalty": 60,
+            "detail": "No test references resolve into this feature (static)"
+          }
+        ],
+        "available_signals": [
+          "issue_load",
+          "orphan_ratio",
+          "test_coverage"
+        ]
+      },
+      "test_edge_count": 0,
+      "test_node_ids": [],
+      "tested": false
+    }
+  ],
+  "contracts": [],
+  "flows": [
+    {
+      "id": "flow:myapp/api/widget.py#get_widget",
+      "entry": "myapp/api/widget.py#get_widget",
+      "steps": [
+        {
+          "node": "myapp/api/widget.py#get_widget",
+          "edge": null
+        },
+        {
+          "node": "myapp/utils/helpers.py#load_widget_data",
+          "edge": {
+            "from": "myapp/api/widget.py#get_widget",
+            "to": "myapp/utils/helpers.py#load_widget_data",
+            "kind": "calls",
+            "provenance": "ast-exact"
+          }
+        },
+        {
+          "node": "http:GET /bot/status|api.telegram.org",
+          "edge": {
+            "from": "myapp/utils/helpers.py#load_widget_data",
+            "to": "http:GET /bot/status|api.telegram.org",
+            "kind": "http",
+            "provenance": "ast-exact"
+          }
+        }
+      ],
+      "terminal": "unresolved",
+      "confidence": "candidate"
+    }
+  ]
+}

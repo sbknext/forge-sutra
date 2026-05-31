@@ -1,0 +1,12 @@
+{
+  "version": 0,
+  "linked_at": "2026-05-31T12:26:18.819Z",
+  "repos": [
+    {
+      "name": "frappe-clean",
+      "path": "/Users/sam/Documents/saas/brain/sutra/tests/fixtures/frappe-clean",
+      "commit": "a42032c"
+    }
+  ],
+  "edges": []
+}

@@ -51,10 +51,21 @@ export function featureIssues(
   return byKind;
 }
 
-/** Flows whose entry node belongs to the feature. */
-export function featureFlows(graph: SutraGraph, feature: SutraFeature) {
+/** True when flow entry or any step node is in the feature subgraph. */
+export function flowMatchesFeature(feature: SutraFeature, flow: NonNullable<SutraGraph["flows"]>[number]): boolean {
   const nodeSet = new Set(feature.node_ids);
-  return (graph.flows ?? []).filter((f) => nodeSet.has(f.entry));
+  if (nodeSet.has(flow.entry)) return true;
+  return (flow.steps ?? []).some((s) => nodeSet.has(s.node));
+}
+
+/** Flows tied to this feature (entry or traced steps in feature nodes). */
+export function featureFlows(graph: SutraGraph, feature: SutraFeature) {
+  return (graph.flows ?? []).filter((f) => flowMatchesFeature(feature, f));
+}
+
+/** Contract record for a feature (endpoints from .sutra.md), if present. */
+export function featureContract(graph: SutraGraph, featureId: string) {
+  return graph.contracts.find((c) => c.feature === featureId);
 }
 
 /** Inbound/outbound edges for a node within the feature subgraph. */

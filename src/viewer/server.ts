@@ -245,7 +245,9 @@ export function startViewerServer(
           return;
         }
         let html = fs.readFileSync(indexPath, "utf8");
-        html = html.replace("__GRAPH_VERSION__", String(GRAPH_VERSION));
+        html = html
+          .replace("__GRAPH_VERSION__", String(GRAPH_VERSION))
+          .replace("__LINK_VERSION__", String(LINK_VERSION));
         res.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-store" });
         res.end(html);
         return;

@@ -6,7 +6,13 @@ import { describe, it, expect } from "vitest";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { subgraph, featureIssues, featureFlows } from "../src/viewer/subgraph.js";
+import {
+  subgraph,
+  featureIssues,
+  featureFlows,
+  flowMatchesFeature,
+  featureContract,
+} from "../src/viewer/subgraph.js";
 import type { SutraGraph, SutraFeature } from "../src/types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -89,5 +95,35 @@ describe("Section 11 — drill-down field tolerance (Story 3.3)", () => {
       },
     ];
     expect(featureFlows(graph, feat)).toHaveLength(1);
+  });
+
+  it("flowMatchesFeature when entry is outside but step is inside", () => {
+    const graph = load("drilldown-basic");
+    const feat = graph.features[0]!;
+    const flow = {
+      id: "flow-2",
+      entry: "other/feature.ts",
+      steps: [
+        { node: "other/feature.ts", edge: null },
+        { node: "app/page.tsx", edge: null },
+      ],
+      terminal: "app/api/widgets/route.ts#GET",
+      confidence: "candidate" as const,
+    };
+    expect(flowMatchesFeature(feat, flow)).toBe(true);
+    expect(featureFlows({ ...graph, flows: [flow] }, feat)).toHaveLength(1);
+  });
+
+  it("featureContract returns contract by feature id", () => {
+    const graph = load("drilldown-basic");
+    graph.contracts = [
+      {
+        feature: "widgets",
+        file: "features/widgets.sutra.md",
+        endpoints: [{ method: "GET", path: "/api/widgets" }],
+      },
+    ];
+    expect(featureContract(graph, "widgets")?.endpoints).toHaveLength(1);
+    expect(featureContract(graph, "missing")).toBeUndefined();
   });
 });

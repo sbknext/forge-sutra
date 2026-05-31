@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { scan } from "../src/scanner.js";
 import { runChecks } from "../src/checks.js";
+import { buildFlows } from "../src/flows.js";
 import { isFrappeRepo } from "../src/extractors/python-frappe.js";
 import type { SutraNode } from "../src/types.js";
 
@@ -41,6 +42,47 @@ describe("python/frappe extractor — clean (Story 4.2 §10)", () => {
       (n) => n.type === "handler" && n.name === "Widget",
     );
     expect(handler).toBeDefined();
+  });
+
+  it("whitelist endpoint emits calls edge to imported helper", () => {
+    const { nodes, edges } = scan(FRAPPE_CLEAN);
+    const ep = nodes.find(
+      (n) => n.type === "endpoint" && n.name === "myapp.api.widget.get_widget",
+    );
+    expect(ep).toBeDefined();
+    const helperId = nodes.find(
+      (n) => n.name === "load_widget_data" && n.file === "myapp/utils/helpers.py",
+    )?.id;
+    expect(helperId).toBeDefined();
+    const call = edges.find(
+      (e) => e.kind === "calls" && e.from === ep!.id && e.to === helperId,
+    );
+    expect(call).toBeDefined();
+  });
+
+  it("helper emits http edge for requests.get with literal path", () => {
+    const { nodes, edges } = scan(FRAPPE_CLEAN);
+    const helperId = nodes.find(
+      (n) => n.name === "load_widget_data" && n.file === "myapp/utils/helpers.py",
+    )?.id;
+    expect(helperId).toBeDefined();
+    const http = edges.find(
+      (e) =>
+        e.kind === "http" &&
+        e.from === helperId &&
+        e.to.includes("GET") &&
+        e.to.includes("api.telegram.org"),
+    );
+    expect(http).toBeDefined();
+  });
+
+  it("buildFlows produces non-empty flows from Frappe endpoint entry", () => {
+    const { nodes, edges } = scan(FRAPPE_CLEAN);
+    const { flows } = buildFlows(nodes, edges);
+    expect(flows.length).toBeGreaterThan(0);
+    const epFlow = flows.find((f) => f.entry.includes("get_widget"));
+    expect(epFlow).toBeDefined();
+    expect(epFlow!.steps.length).toBeGreaterThan(1);
   });
 
   it("doc_events produces calls edge to resolved handler", () => {

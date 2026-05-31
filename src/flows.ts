@@ -19,6 +19,11 @@ import {
   collectExternalHosts,
   matchUsedDynamicSegment,
 } from "./util/http-match.js";
+import {
+  extractFrappeCandidatesFromPath,
+  isFrappeDottedEndpoint,
+  normaliseFrappeDotted,
+} from "./util/frappe-match.js";
 
 const FLOW_KINDS = new Set<SutraEdge["kind"]>(["renders", "calls", "http"]);
 const MAX_DEPTH = 32;
@@ -86,17 +91,49 @@ function buildAdjacency(edges: SutraEdge[]): Map<string, SutraEdge[]> {
 function findEntryPoints(
   nodes: SutraNode[],
   edges: SutraEdge[],
+  adj: Map<string, SutraEdge[]>,
 ): SutraNode[] {
   const rendered = new Set<string>();
   for (const e of edges) {
     if (e.kind === "renders") rendered.add(e.to);
   }
-  const entries = nodes.filter(
-    (n) =>
-      (n.type === "route" || n.type === "component") && !rendered.has(n.id),
-  );
+  const entries: SutraNode[] = [];
+  const seen = new Set<string>();
+
+  for (const n of nodes) {
+    if ((n.type === "route" || n.type === "component") && !rendered.has(n.id)) {
+      entries.push(n);
+      seen.add(n.id);
+    }
+  }
+
+  for (const n of nodes) {
+    if (n.type !== "endpoint" || seen.has(n.id)) continue;
+    const out = (adj.get(n.id) ?? []).filter((e) => FLOW_KINDS.has(e.kind));
+    if (out.length > 0) {
+      entries.push(n);
+      seen.add(n.id);
+    }
+  }
+
   entries.sort((a, b) => a.id.localeCompare(b.id));
   return entries;
+}
+
+function findFrappeHandlerByHttpPath(
+  nodes: SutraNode[],
+  urlPath: string,
+): { handlerId: string; dynamic: boolean } | null {
+  const candidates = extractFrappeCandidatesFromPath(urlPath).map(normaliseFrappeDotted);
+  if (candidates.length === 0) return null;
+  for (const n of nodes) {
+    if (n.type !== "endpoint" || !isFrappeDottedEndpoint(n.name)) continue;
+    const norm = normaliseFrappeDotted(n.name);
+    if (candidates.some((c) => c === norm || norm.endsWith(c) || c.endsWith(norm))) {
+      return { handlerId: n.id, dynamic: false };
+    }
+  }
+  return null;
 }
 
 function findEndpointHandler(
@@ -104,6 +141,9 @@ function findEndpointHandler(
   method: string,
   urlPath: string,
 ): { handlerId: string; dynamic: boolean } | null {
+  const frappe = findFrappeHandlerByHttpPath(nodes, urlPath);
+  if (frappe) return frappe;
+
   let best: { handlerId: string; dynamic: boolean } | null = null;
   for (const n of nodes) {
     if (n.type !== "endpoint" && n.type !== "route") continue;
@@ -305,7 +345,7 @@ export function buildFlows(
   const adj = buildAdjacency(edges);
   const proxyPrefixes = collectProxyPrefixes(nodes);
   const externalHosts = new Set(collectExternalHosts(nodes));
-  const entries = findEntryPoints(nodes, edges);
+  const entries = findEntryPoints(nodes, edges, adj);
 
   const flows: SutraFlow[] = [];
 
@@ -323,7 +363,11 @@ export function buildFlows(
     if (steps.length < 2) continue;
 
     const hasHttp = steps.some((s) => s.edge?.kind === "http");
-    const confirmed = !candidate && hasHttp && terminal !== "unresolved";
+    const hasCalls = steps.some((s) => s.edge?.kind === "calls");
+    const confirmed =
+      !candidate &&
+      (hasHttp || hasCalls) &&
+      terminal !== "unresolved";
 
     flows.push({
       id: `flow:${entry.id}`,

@@ -6,14 +6,21 @@ import path from "node:path";
 import fs from "node:fs";
 import type { Extractor, ExtractorInput, ExtractorResult } from "../extractor.js";
 import type { SutraNode, SutraEdge, NodeType } from "../types.js";
-import { makeNodeId, relPosix } from "../util/ids.js";
+import { loadExternalHosts } from "../external-hosts.js";
+import { makeNodeId, relPosix, httpTargetId } from "../util/ids.js";
 import {
   parsePythonModule,
   hasWhitelistDecorator,
   isDocumentController,
   isControllerHook,
   parseHooksAssignments,
+  parseModuleImports,
+  extractCallsInBody,
+  type PyCallSite,
+  type PyImportMap,
 } from "../util/python-ast.js";
+import Parser from "tree-sitter";
+import Python from "tree-sitter-python";
 
 const PY_LANGUAGE = "python-frappe" as const;
 
@@ -98,6 +105,165 @@ function qualifiedSymbol(modulePath: string, name: string, className?: string): 
   return name;
 }
 
+let pyParser: Parser | null = null;
+
+function getPyParser(): Parser {
+  if (!pyParser) {
+    pyParser = new Parser();
+    pyParser.setLanguage(Python as unknown as Parser.Language);
+  }
+  return pyParser;
+}
+
+function resolveSimpleCall(
+  modPath: string,
+  name: string,
+  imports: PyImportMap,
+  fnByDotted: Map<string, string>,
+): string | null {
+  const local = `${modPath}.${name}`;
+  const localId = fnByDotted.get(local);
+  if (localId) return localId;
+  const imp = imports.modules.get(name);
+  if (imp) {
+    const impId = fnByDotted.get(imp);
+    if (impId) return impId;
+  }
+  return fnByDotted.get(name) ?? null;
+}
+
+function resolveAttributeCall(
+  modPath: string,
+  className: string | undefined,
+  receiver: string,
+  method: string,
+  imports: PyImportMap,
+  fnByDotted: Map<string, string>,
+): string | null {
+  if (receiver === "self" && className) {
+    const dotted = `${modPath}.${className}.${method}`;
+    return fnByDotted.get(dotted) ?? null;
+  }
+  const recvMod = imports.modules.get(receiver);
+  if (recvMod) {
+    return fnByDotted.get(`${recvMod}.${method}`) ?? fnByDotted.get(method) ?? null;
+  }
+  const asMod = `${modPath}.${receiver}.${method}`;
+  return fnByDotted.get(asMod) ?? null;
+}
+
+function emitCallSiteEdges(
+  fromId: string,
+  site: PyCallSite,
+  modPath: string,
+  className: string | undefined,
+  imports: PyImportMap,
+  fnByDotted: Map<string, string>,
+  edges: SutraEdge[],
+): void {
+  if (site.frappeMethod) {
+    const targetId = fnByDotted.get(site.frappeMethod);
+    if (targetId) {
+      edges.push({
+        from: fromId,
+        to: targetId,
+        kind: "calls",
+        provenance: "ast-exact",
+      });
+      return;
+    }
+    edges.push({
+      from: fromId,
+      to: httpTargetId("POST", `/api/method/${site.frappeMethod}`),
+      kind: "http",
+      provenance: "ast-exact",
+    });
+    return;
+  }
+
+  if (site.requestsHttpMethod && site.requestsUrl) {
+    edges.push({
+      from: fromId,
+      to: httpTargetId(site.requestsHttpMethod, site.requestsUrl, site.requestsHost),
+      kind: "http",
+      provenance: "ast-exact",
+    });
+    return;
+  }
+
+  if (site.simpleName) {
+    const to = resolveSimpleCall(modPath, site.simpleName, imports, fnByDotted);
+    if (to && to !== fromId) {
+      edges.push({ from: fromId, to, kind: "calls", provenance: "ast-exact" });
+    }
+    return;
+  }
+
+  if (site.receiver && site.method) {
+    const to = resolveAttributeCall(
+      modPath,
+      className,
+      site.receiver,
+      site.method,
+      imports,
+      fnByDotted,
+    );
+    if (to && to !== fromId) {
+      edges.push({
+        from: fromId,
+        to,
+        kind: "calls",
+        provenance: fnByDotted.has(`${modPath}.${site.receiver}.${site.method}`)
+          ? "ast-exact"
+          : "heuristic",
+      });
+    }
+  }
+}
+
+function extractBodyEdgesForFile(
+  absPath: string,
+  source: string,
+  rel: string,
+  modPath: string,
+  fnByDotted: Map<string, string>,
+  nodeIdBySymbol: Map<string, string>,
+  edges: SutraEdge[],
+): void {
+  const tree = getPyParser().parse(source);
+  const imports = parseModuleImports(source);
+
+  function processFunctionDef(
+    fnNode: Parser.SyntaxNode,
+    className?: string,
+  ): void {
+    const nameNode = fnNode.childForFieldName("name");
+    if (!nameNode) return;
+    const sym = qualifiedSymbol(modPath, nameNode.text, className);
+    const fromId = nodeIdBySymbol.get(sym) ?? makeNodeId(rel, sym);
+    const body = fnNode.childForFieldName("body");
+    for (const site of extractCallsInBody(body, source)) {
+      emitCallSiteEdges(fromId, site, modPath, className, imports, fnByDotted, edges);
+    }
+  }
+
+  function walkFunctions(node: Parser.SyntaxNode, className?: string): void {
+    for (const child of node.namedChildren) {
+      if (child.type === "function_definition") {
+        processFunctionDef(child, className);
+      } else if (child.type === "decorated_definition") {
+        const inner = child.namedChildren.find((c) => c.type === "function_definition");
+        if (inner) processFunctionDef(inner, className);
+      } else if (child.type === "class_definition") {
+        const clsName = child.childForFieldName("name")?.text;
+        if (clsName) walkFunctions(child, clsName);
+      }
+    }
+  }
+
+  walkFunctions(tree.rootNode);
+}
+
 export class PythonFrappeExtractor implements Extractor {
   readonly language = PY_LANGUAGE;
 
@@ -117,6 +283,8 @@ export class PythonFrappeExtractor implements Extractor {
 
     /** dotted module path → node id */
     const fnByDotted = new Map<string, string>();
+    /** module-relative symbol → node id */
+    const nodeIdBySymbol = new Map<string, string>();
 
     for (const absPath of pyFiles) {
       const rel = relPosix(absRoot, absPath);
@@ -151,6 +319,7 @@ export class PythonFrappeExtractor implements Extractor {
         const nodeId = makeNodeId(rel, sym);
         const dotted = `${modPath}.${fn.name}`;
         fnByDotted.set(dotted, nodeId);
+        nodeIdBySymbol.set(qualifiedSymbol(modPath, fn.name), nodeId);
 
         if (hasWhitelistDecorator(fn.decorators)) {
           nodes.push(
@@ -204,6 +373,7 @@ export class PythonFrappeExtractor implements Extractor {
           const methodId = makeNodeId(rel, methodSym);
           const dotted = `${modPath}.${cls.name}.${method.name}`;
           fnByDotted.set(dotted, methodId);
+          nodeIdBySymbol.set(methodSym, methodId);
           const nodeType: NodeType = isControllerHook(method.name) ? "handler" : "function";
           nodes.push(
             pyNode({
@@ -219,6 +389,27 @@ export class PythonFrappeExtractor implements Extractor {
           );
         }
       }
+    }
+
+    for (const absPath of pyFiles) {
+      const rel = relPosix(absRoot, absPath);
+      if (rel.endsWith("hooks.py")) continue;
+      let source: string;
+      try {
+        source = fs.readFileSync(absPath, "utf8");
+      } catch {
+        continue;
+      }
+      const modPath = modulePathFromRel(rel);
+      extractBodyEdgesForFile(
+        absPath,
+        source,
+        rel,
+        modPath,
+        fnByDotted,
+        nodeIdBySymbol,
+        edges,
+      );
     }
 
     const resolveHandler = (dotted: string): string => {
@@ -285,6 +476,25 @@ export class PythonFrappeExtractor implements Extractor {
           kind: "calls",
           provenance: fnByDotted.has(job.handler) ? "ast-exact" : "heuristic",
         });
+      }
+    }
+
+    for (const host of loadExternalHosts(absRoot)) {
+      const label = `EXTERNAL ${host}`;
+      const nodeId = makeNodeId("external-hosts", label);
+      if (!nodes.find((n) => n.id === nodeId)) {
+        nodes.push(
+          pyNode({
+            id: nodeId,
+            type: "route",
+            name: label,
+            file: "external-hosts",
+            line: 1,
+            data_shape: label,
+            feature: "external",
+            provenance: "heuristic",
+          }),
+        );
       }
     }
 

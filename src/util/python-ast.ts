@@ -172,6 +172,181 @@ export function isControllerHook(name: string): boolean {
   return DOC_HOOK_METHODS.has(name);
 }
 
+export interface PyCallSite {
+  line: number;
+  /** Simple name call: `foo()` */
+  simpleName?: string;
+  /** Attribute call: `obj.method()` */
+  receiver?: string;
+  method?: string;
+  /** `frappe.call` first-arg dotted method (string literal only). */
+  frappeMethod?: string;
+  /** `requests.get` / `post` / … */
+  requestsHttpMethod?: string;
+  requestsUrl?: string;
+  requestsHost?: string | null;
+}
+
+export interface PyImportMap {
+  /** local alias → dotted module path (e.g. helpers → myapp.utils.helpers) */
+  modules: Map<string, string>;
+}
+
+/** Top-level import aliases for call resolution (static only). */
+export function parseModuleImports(source: string): PyImportMap {
+  const modules = new Map<string, string>();
+  const tree = getParser().parse(source);
+  for (const child of tree.rootNode.namedChildren) {
+    if (child.type === "import_statement") {
+      for (const nameNode of child.namedChildren) {
+        if (nameNode.type === "dotted_name" || nameNode.type === "aliased_import") {
+          const dotted = nameNode.type === "aliased_import"
+            ? nameNode.childForFieldName("name")?.text
+            : nameNode.text;
+          const alias =
+            nameNode.type === "aliased_import"
+              ? nameNode.childForFieldName("alias")?.text
+              : dotted?.split(".").pop();
+          if (dotted && alias) modules.set(alias, dotted);
+        }
+      }
+    }
+    if (child.type === "import_from_statement") {
+      const moduleName = child.childForFieldName("module_name")?.text;
+      if (!moduleName) continue;
+      const moduleNode = child.childForFieldName("module_name");
+      for (const nameNode of child.namedChildren) {
+        if (nameNode === moduleNode) continue;
+        if (nameNode.type === "dotted_name" || nameNode.type === "aliased_import") {
+          const imported =
+            nameNode.type === "aliased_import"
+              ? nameNode.childForFieldName("name")?.text
+              : nameNode.text;
+          const alias =
+            nameNode.type === "aliased_import"
+              ? nameNode.childForFieldName("alias")?.text
+              : imported;
+          if (imported && alias) {
+            modules.set(alias, `${moduleName}.${imported}`);
+          }
+        }
+      }
+    }
+  }
+  return { modules };
+}
+
+function stringLiteralValue(node: Parser.SyntaxNode | null): string | null {
+  if (!node) return null;
+  if (node.type === "string") {
+    const content = node.namedChildren.find((c) => c.type === "string_content");
+    if (content) return content.text;
+  }
+  return null;
+}
+
+function extractFrappCallMethod(argsNode: Parser.SyntaxNode | null): string | null {
+  if (!argsNode) return null;
+  for (const arg of argsNode.namedChildren) {
+    if (arg.type === "string" || arg.type === "concatenated_string") {
+      const lit = stringLiteralValue(arg.type === "string" ? arg : arg.namedChildren[0] ?? null);
+      if (lit) return lit;
+    }
+    if (arg.type === "keyword_argument") {
+      const name = arg.childForFieldName("name")?.text;
+      if (name === "method") {
+        const val = arg.childForFieldName("value");
+        return stringLiteralValue(val);
+      }
+    }
+  }
+  return null;
+}
+
+function extractRequestsUrl(argsNode: Parser.SyntaxNode | null): {
+  path: string;
+  host: string | null;
+} | null {
+  if (!argsNode) return null;
+  for (const arg of argsNode.namedChildren) {
+    if (arg.type !== "string") continue;
+    const lit = stringLiteralValue(arg);
+    if (!lit) continue;
+    if (lit.startsWith("http://") || lit.startsWith("https://")) {
+      try {
+        const u = new URL(lit);
+        return { path: u.pathname || "/", host: u.hostname.toLowerCase() };
+      } catch {
+        return null;
+      }
+    }
+    if (lit.startsWith("/")) return { path: lit, host: null };
+    return null;
+  }
+  return null;
+}
+
+const REQUESTS_HTTP = new Set(["get", "post", "put", "patch", "delete", "head", "options"]);
+
+function visitCallSites(
+  node: Parser.SyntaxNode,
+  source: string,
+  out: PyCallSite[],
+): void {
+  if (node.type === "call") {
+    const fn = node.childForFieldName("function");
+    const args = node.childForFieldName("arguments");
+    const line = node.startPosition.row + 1;
+    if (fn?.type === "identifier") {
+      const name = fn.text;
+      if (name !== "getattr" && name !== "eval") {
+        out.push({ line, simpleName: name });
+      }
+    } else if (fn?.type === "attribute") {
+      const recvNode = fn.childForFieldName("object");
+      const attrNode = fn.childForFieldName("attribute");
+      const meth =
+        attrNode?.text ??
+        fn.namedChildren.find((c) => c.type === "identifier" && c !== recvNode)?.text ??
+        "";
+      const recv = recvNode?.text ?? "";
+      if (recv === "frappe" && meth === "call") {
+        const frappeMethod = extractFrappCallMethod(args);
+        if (frappeMethod) out.push({ line, frappeMethod });
+      } else if (recv === "requests" && REQUESTS_HTTP.has(meth)) {
+        const url = extractRequestsUrl(args);
+        if (url) {
+          out.push({
+            line,
+            requestsHttpMethod: meth.toUpperCase(),
+            requestsUrl: url.path,
+            requestsHost: url.host,
+          });
+        }
+      } else if (meth !== "getattr") {
+        out.push({ line, receiver: recv, method: meth });
+      }
+    }
+  }
+  for (const child of node.namedChildren) {
+    visitCallSites(child, source, out);
+  }
+}
+
+/** Extract call sites inside one function/method body (skips nested defs). */
+export function extractCallsInBody(
+  bodyNode: Parser.SyntaxNode | null,
+  source: string,
+): PyCallSite[] {
+  if (!bodyNode) return [];
+  const out: PyCallSite[] = [];
+  for (const child of bodyNode.namedChildren) {
+    if (child.type === "function_definition") continue;
+    visitCallSites(child, source, out);
+  }
+  return out;
+}
+
 /** Parse doc_events / scheduler_events handler paths from hooks.py content. */
 export function parseHooksAssignments(source: string): {
   docEvents: Array<{ doctype: string; event: string; handler: string }>;

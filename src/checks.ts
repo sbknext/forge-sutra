@@ -15,6 +15,10 @@ import {
   collectExternalHosts,
   normalisePath,
 } from "./util/http-match.js";
+import {
+  frappeEndpointMatchesDeclared,
+  isFrappeDottedEndpoint,
+} from "./util/frappe-match.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -240,10 +244,28 @@ export function checkContractDrift(
   if (contracts.length === 0) return [];
 
   const routeDefs: Array<{ method: string; path: string; feature: string }> = [];
+  const frappeEndpoints: Array<{ name: string; feature: string }> = [];
   for (const n of nodes) {
     if (n.type !== "endpoint" && n.type !== "route") continue;
     const def = parseEndpointDef(n);
-    if (def) routeDefs.push({ ...def, feature: n.feature });
+    if (def) {
+      routeDefs.push({ ...def, feature: n.feature });
+    } else if (n.type === "endpoint" && isFrappeDottedEndpoint(n.name)) {
+      frappeEndpoints.push({ name: n.name, feature: n.feature });
+    }
+  }
+
+  function declaredMatchesGraph(method: string, path: string): boolean {
+    if (
+      routeDefs.some(
+        (def) => def.method === method && pathMatches(path, def.path),
+      )
+    ) {
+      return true;
+    }
+    return frappeEndpoints.some((ep) =>
+      frappeEndpointMatchesDeclared(path, ep.name),
+    );
   }
 
   const declared: Array<{ method: string; path: string; feature: string; file: string }> = [];
@@ -260,9 +282,7 @@ export function checkContractDrift(
     const key = `${ep.method} ${normalisePath(ep.path)}`;
     if (seen.has(`missing:${key}`)) continue;
 
-    const matched = routeDefs.some(
-      (def) => def.method === ep.method && pathMatches(ep.path, def.path),
-    );
+    const matched = declaredMatchesGraph(ep.method, ep.path);
 
     if (!matched) {
       seen.add(`missing:${key}`);

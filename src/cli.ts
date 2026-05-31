@@ -37,6 +37,7 @@ import { writeScaffolds, SCAFFOLD_KINDS } from "./scaffold.js";
 import { runScanPipeline, startWatch, type ScanTimings } from "./watch.js";
 import { runWatch } from "./watch-viewer.js";
 import { reconcileGraphs, buildReconcileOutput, type ReconcileOutput } from "./reconcile.js";
+import { linkGraphs, writeLinkFile } from "./link.js";
 import { migrateFile } from "./migrate.js";
 import { exportContracts, exportGraphSchema, exportIssues, writeExport } from "./export.js";
 import { inferFeatureLabels, countAiLabels } from "./ai/infer-features.js";
@@ -67,6 +68,22 @@ function getCommit(repoRoot: string): string {
 
 function sutraDir(cwd: string): string {
   return path.join(cwd, SUTRA_DIR);
+}
+
+/** Artifact root: where .sutra/ is written (defaults to process.cwd()). */
+function resolveArtifactRoot(explicit?: string): string {
+  if (explicit) return path.resolve(explicit);
+  const env = process.env.SUTRA_OUTPUT_DIR?.trim();
+  if (env) return path.resolve(env);
+  return process.cwd();
+}
+
+/** Viewer reads .sutra/graph.json under this directory (defaults to cwd). */
+function resolveViewerRoot(explicit?: string): string {
+  if (explicit) return path.resolve(explicit);
+  const env = process.env.SUTRA_REPO?.trim();
+  if (env) return path.resolve(env);
+  return process.cwd();
 }
 
 function graphFilePath(cwd: string): string {
@@ -152,9 +169,12 @@ function runCheckGate(
   process.exit(gate.exitCode);
 }
 
-async function cmdBaseline(repoPath: string | undefined): Promise<void> {
-  const cwd = process.cwd();
-  const repoRoot = path.resolve(repoPath ?? cwd);
+async function cmdBaseline(
+  repoPath: string | undefined,
+  opts: { outputDir?: string },
+): Promise<void> {
+  const cwd = resolveArtifactRoot(opts.outputDir);
+  const repoRoot = path.resolve(repoPath ?? process.cwd());
   const commit = getCommit(repoRoot);
 
   console.log(chalk.bold(`\nSutra baseline → ${repoRoot}\n`));
@@ -273,10 +293,11 @@ async function cmdScan(
     failOn?: string;
     format?: string;
     prComment?: string | boolean;
+    outputDir?: string;
   },
 ): Promise<void> {
-  const cwd = process.cwd();
-  const repoRoot = path.resolve(repoPath ?? cwd);
+  const cwd = resolveArtifactRoot(opts.outputDir);
+  const repoRoot = path.resolve(repoPath ?? process.cwd());
   const commit = getCommit(repoRoot);
 
   if (opts.watch) {
@@ -365,10 +386,10 @@ async function cmdScan(
 
 async function cmdWatch(
   repoPath: string | undefined,
-  opts: { port?: number },
+  opts: { port?: number; outputDir?: string },
 ): Promise<void> {
-  const cwd = process.cwd();
-  const repoRoot = path.resolve(repoPath ?? cwd);
+  const cwd = resolveArtifactRoot(opts.outputDir);
+  const repoRoot = path.resolve(repoPath ?? process.cwd());
 
   const handle = await runWatch(repoRoot, cwd, { port: opts.port });
 
@@ -436,6 +457,39 @@ function cmdDiff(
 }
 
 // ── reconcile command ─────────────────────────────────────────────────────────
+
+function cmdLink(
+  graphs: string[],
+  opts: { outputDir?: string; cwd?: string },
+): void {
+  if (graphs.length < 2) {
+    console.error(
+      chalk.red("\nError: provide at least two graph.json paths (client, server).\n"),
+    );
+    process.exit(2);
+  }
+
+  const loaded: SutraGraph[] = [];
+  const repoPaths: string[] = [];
+  for (const g of graphs) {
+    const resolved = path.resolve(g);
+    try {
+      loaded.push(loadGraphFile(resolved));
+      repoPaths.push(path.dirname(path.dirname(resolved)));
+    } catch (err) {
+      console.error(chalk.red(`\nError: ${String(err)}\n`));
+      process.exit(1);
+    }
+  }
+
+  const link = linkGraphs(loaded, repoPaths);
+  const cwd = resolveArtifactRoot(opts.outputDir ?? opts.cwd);
+  const out = writeLinkFile(cwd, link);
+  console.log(chalk.bold(`\nSutra link — cross-repo map (candidate)\n`));
+  console.log(`  Repos: ${link.repos.map((r) => r.name).join(" · ")}`);
+  console.log(`  Edges: ${link.edges.length} (${link.edges.filter((e) => e.resolution === "confirmed").length} confirmed)`);
+  console.log(chalk.gray(`  Wrote ${out}\n`));
+}
 
 function cmdReconcile(opts: { client: string; server: string; out?: string }): void {
   let clientGraph: SutraGraph;
@@ -537,8 +591,8 @@ function cmdScaffold(opts: { fromIssues?: string; force?: boolean }): void {
 
 // ── view command ──────────────────────────────────────────────────────────────
 
-async function cmdViewer(opts: { port?: number }): Promise<void> {
-  const cwd = process.cwd();
+async function cmdViewer(opts: { port?: number; repo?: string }): Promise<void> {
+  const cwd = resolveViewerRoot(opts.repo);
   const graphFile = graphFilePath(cwd);
 
   if (!fs.existsSync(graphFile)) {
@@ -555,7 +609,8 @@ async function cmdViewer(opts: { port?: number }): Promise<void> {
   const server = await startViewerServer(cwd, { port });
 
   console.log(chalk.bold(`\nSutra viewer → ${server.url}`));
-  console.log(chalk.gray("  Localhost only · reads .sutra/graph.json · Ctrl+C to stop.\n"));
+  console.log(chalk.gray(`  Graph: ${graphFile}`));
+  console.log(chalk.gray("  Localhost only · Ctrl+C to stop.\n"));
 
   if (process.platform === "darwin") {
     try {
@@ -757,6 +812,10 @@ program
     "--pr-comment [path]",
     "Write PR comment Markdown for --check (stdout or file)",
   )
+  .option(
+    "--output-dir <dir>",
+    "Write .sutra/ artifacts here instead of process.cwd() (scan repo unchanged)",
+  )
   .action(
     async (
       repoPath: string | undefined,
@@ -769,6 +828,7 @@ program
         failOn?: string;
         format?: string;
         prComment?: string | boolean;
+        outputDir?: string;
       },
     ) => {
       await cmdScan(repoPath, opts);
@@ -780,8 +840,12 @@ program
   .description(
     "Scan repo and write .sutra/baseline.json for CI --check gating.",
   )
-  .action(async (repoPath: string | undefined) => {
-    await cmdBaseline(repoPath);
+  .option(
+    "--output-dir <dir>",
+    "Write .sutra/baseline.json here instead of process.cwd()",
+  )
+  .action(async (repoPath: string | undefined, opts: { outputDir?: string }) => {
+    await cmdBaseline(repoPath, opts);
   });
 
 program
@@ -801,7 +865,11 @@ program
     "Reload in browser to refresh — no rebuild. Localhost only."
   )
   .option("--port <n>", "Port to bind (default 4577)", (v) => parseInt(v, 10))
-  .action(async (opts: { port?: number }) => {
+  .option(
+    "--repo <dir>",
+    "Directory containing .sutra/graph.json (default: cwd; or SUTRA_REPO)",
+  )
+  .action(async (opts: { port?: number; repo?: string }) => {
     await cmdViewer(opts);
   });
 
@@ -812,7 +880,8 @@ program
     "Starts local viewer on 127.0.0.1. Static scan only — candidate results.",
   )
   .option("--port <n>", "Viewer port (default 4577)", (v) => parseInt(v, 10))
-  .action(async (repoPath: string | undefined, opts: { port?: number }) => {
+  .option("--output-dir <dir>", "Write .sutra/ artifacts here (live rescan)")
+  .action(async (repoPath: string | undefined, opts: { port?: number; outputDir?: string }) => {
     await cmdWatch(repoPath, opts);
   });
 
@@ -835,6 +904,20 @@ program
       cmdDiff(pathA, pathB, opts);
     },
   );
+
+program
+  .command("link <graphs...>")
+  .description(
+    "Link two or more scan graphs into .sutra/link.json for the ecosystem viewer. " +
+    "Candidate cross-repo HTTP resolution only.",
+  )
+  .option(
+    "--output-dir <dir>",
+    "Write link.json here (default: cwd or SUTRA_OUTPUT_DIR)",
+  )
+  .action((graphs: string[], opts: { outputDir?: string }) => {
+    cmdLink(graphs, opts);
+  });
 
 program
   .command("reconcile")

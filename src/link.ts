@@ -2,8 +2,10 @@
  * Story 1.4 / 3.4 — cross-repo link result builder (consumes scan graphs).
  */
 
+import fs from "node:fs";
+import path from "node:path";
 import type { LinkResult, LinkedEdge, SutraGraph } from "./types.js";
-import { LINK_VERSION } from "./types.js";
+import { LINK_VERSION, SUTRA_DIR, LINK_FILE } from "./types.js";
 import { makeCrossRepoId } from "./util/ids.js";
 import { extractClientCalls, reconcileGraphs } from "./reconcile.js";
 import { pathMatches, parseEndpointDef } from "./util/http-match.js";
@@ -74,4 +76,44 @@ export function linkGraphs(
     ],
     edges,
   };
+}
+
+/** Empty-but-valid link artifact for single-repo scans (no cross-repo edges). */
+export function emptyLinkResult(
+  repo: string,
+  repoPath: string,
+  commit?: string,
+): LinkResult {
+  return {
+    version: LINK_VERSION,
+    linked_at: new Date().toISOString(),
+    repos: [{ name: repo, path: path.resolve(repoPath), commit }],
+    edges: [],
+  };
+}
+
+export function linkFilePath(cwd: string): string {
+  return path.join(cwd, SUTRA_DIR, LINK_FILE);
+}
+
+/** Write `.sutra/link.json` (never overwrites a multi-repo link from `sutra link`). */
+export function writeLinkFile(
+  cwd: string,
+  link: LinkResult,
+  options?: { onlyIfAbsent?: boolean },
+): string {
+  const out = linkFilePath(cwd);
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  if (options?.onlyIfAbsent && fs.existsSync(out)) {
+    try {
+      const existing = JSON.parse(fs.readFileSync(out, "utf8")) as LinkResult;
+      if (existing.repos.length > 1 || existing.edges.length > 0) {
+        return out;
+      }
+    } catch {
+      // overwrite corrupt file
+    }
+  }
+  fs.writeFileSync(out, JSON.stringify(link, null, 2), "utf8");
+  return out;
 }

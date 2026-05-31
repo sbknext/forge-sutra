@@ -9,6 +9,7 @@ import { scan, collectFiles } from "./scanner.js";
 import { runChecks, checkContractDrift, checkUntestedFeatures } from "./checks.js";
 import { buildFeatures, computeFeatureHealth } from "./features.js";
 import { buildFlows } from "./flows.js";
+import { emptyLinkResult, writeLinkFile } from "./link.js";
 import { loadContracts } from "./contracts.js";
 import { runPostScanHooks } from "./hooks.js";
 import { diffGraphs, formatDiffSummary } from "./diff.js";
@@ -141,6 +142,11 @@ export function runScanPipeline(
   graph.flows = flowResult.flows;
 
   fs.writeFileSync(graphPathForHooks, JSON.stringify(graph, null, 2), "utf8");
+  writeLinkFile(
+    cwd,
+    emptyLinkResult(graph.repo, repoRoot, commit),
+    { onlyIfAbsent: true },
+  );
   timings.writeMs = performance.now() - writeStart;
 
   let diffSummary: string | undefined;

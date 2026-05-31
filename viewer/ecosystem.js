@@ -38,7 +38,13 @@
             tab.title = "link.json version mismatch — re-run link";
             return;
           }
+          if (!link.edges || link.edges.length === 0 || !link.repos || link.repos.length < 2) {
+            tab.classList.add("disabled");
+            tab.title = "Run `sutra link <client> <server>` to build the ecosystem map";
+            return;
+          }
           tab.classList.remove("disabled");
+          tab.title = "Cross-repo ecosystem map";
           tab.onclick = function () {
             window.SutraEcosystem.show(link);
           };

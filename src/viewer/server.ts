@@ -18,6 +18,7 @@ import {
   type LinkResult,
   type SutraGraph,
 } from "../types.js";
+import { emptyLinkResult } from "../link.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = path.resolve(__dirname, "../..");
@@ -52,9 +53,10 @@ export interface ViewerServerOptions {
 function readLinkFresh(cwd: string): { status: number; body: string; headers: Record<string, string> } {
   const linkPath = path.join(cwd, SUTRA_DIR, LINK_FILE);
   if (!fs.existsSync(linkPath)) {
+    const stub = emptyLinkResult("local", cwd);
     return {
-      status: 404,
-      body: JSON.stringify({ error: "link.json not found — run `sutra link` first" }),
+      status: 200,
+      body: JSON.stringify(stub),
       headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
     };
   }
@@ -160,6 +162,17 @@ function readGraphFresh(cwd: string): { status: number; body: string; headers: R
 function safeAssetPath(urlPath: string): string | null {
   const decoded = decodeURIComponent(urlPath.replace(/^\//, ""));
   if (!decoded || decoded.includes("..") || decoded.includes("\\")) return null;
+
+  // Vendored libs (cytoscape) — only under viewer/vendor/
+  const vendorPrefix = "vendor/";
+  if (decoded.startsWith(vendorPrefix)) {
+    const rel = decoded.slice(vendorPrefix.length);
+    if (!rel || rel.includes("/") || !/^[a-zA-Z0-9._-]+\.js$/.test(rel)) return null;
+    const full = path.join(VIEWER_DIR, "vendor", rel);
+    if (!full.startsWith(path.join(VIEWER_DIR, "vendor"))) return null;
+    return full;
+  }
+
   const base = path.basename(decoded);
   if (!ALLOWED_ASSETS.has(base)) return null;
   return path.join(VIEWER_DIR, base);

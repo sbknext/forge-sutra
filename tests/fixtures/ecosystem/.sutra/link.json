@@ -1,0 +1,42 @@
+{
+  "version": 0,
+  "linked_at": "2026-05-30T12:00:00.000Z",
+  "repos": [
+    {
+      "name": "client-app",
+      "path": "/Users/sam/Documents/saas/brain/sutra/tests/fixtures/ecosystem",
+      "commit": "client1"
+    },
+    {
+      "name": "server-api",
+      "path": "/Users/sam/Documents/saas/brain/sutra/tests/fixtures/ecosystem/repo-b",
+      "commit": "server1"
+    }
+  ],
+  "edges": [
+    {
+      "from": "client-app::lib/client.ts#fetchUsers",
+      "to": "server-api::routes/users.js#GET /api/users",
+      "kind": "http",
+      "resolution": "confirmed",
+      "method": "GET",
+      "path": "/api/users"
+    },
+    {
+      "from": "client-app::lib/client.ts#fetchMissing",
+      "to": "server-api::POST /api/missing",
+      "kind": "http",
+      "resolution": "broken",
+      "method": "POST",
+      "path": "/api/missing"
+    },
+    {
+      "from": "client-app::lib/client.ts#fetchGhost",
+      "to": "server-api::GET /api/ghost",
+      "kind": "http",
+      "resolution": "unresolved",
+      "method": "GET",
+      "path": "/api/ghost"
+    }
+  ]
+}

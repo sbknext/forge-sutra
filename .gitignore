@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .sutra/
+!tests/fixtures/**/.sutra/
+!tests/fixtures/**/.sutra/**
 *.log
 .DS_Store
 

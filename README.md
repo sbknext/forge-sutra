@@ -153,13 +153,30 @@ Stubs may not compile. Not run in CI. Not auto-test generation.
 
 ### `forge-sutra reconcile --client <graph> --server <graph>`
 
-Match client graph HTTP calls against server graph routes. Emits `cross_repo_orphan` (warn) for client calls with no matching server route.
+Match client graph HTTP calls against server graph routes. Each `cross_repo_orphan` is classified into one of four categories so false positives from proxies, dynamic routes, and external hosts don't flood the output.
 
 ```
 forge-sutra reconcile --client .sutra/all/echo-ai.json --server .sutra/all/brain-api.json
+
+# Print all four classes with suppression reasons:
+forge-sutra reconcile --client .sutra/all/echo-ai.json --server .sutra/all/brain-api.json --verbose
+
+# Write classified JSON:
+forge-sutra reconcile --client ... --server ... --out .sutra/reconcile.json
 ```
 
-Cross-repo static match only — ignores auth, env-specific URLs, proxy rewrites, runtime 404s. Results are **candidates for human review**. Known proxy paths (e.g. echo-ai → brain-api via `next.config` rewrites) may still require manual verification.
+**Classification semantics** (honest labels — this is sutra's core principle):
+
+| Class | Meaning |
+|---|---|
+| `confirmed_broken` | No static suppression rule explains the call. **Does NOT mean "definitely a bug"** — it means no proxy, dynamic-route, or external-host pattern matched. Human review needed. |
+| `proxy_suppressed` | Path matches a `PROXY /prefix` node in the client graph (from `next.config` rewrite detection). Candidate only — dynamic expressions in `next.config` may be missed. |
+| `dynamic_suppressed` | Path structurally matches a server route template (`[param]` or `:param`). **Structurally matched only — auth, method, and params are NOT validated.** |
+| `external_suppressed` | Target host matches the external-host allowlist (`.sutra/external-hosts.json` or built-in defaults: Telegram, Stripe). |
+
+All orphans appear in the JSON output — none are silently dropped. The viewer's "Cross-repo" panel shows `confirmed_broken` only by default; suppressed entries are accessible via "Show suppressed (N)".
+
+Cross-repo static match only — ignores auth, env-specific URLs, runtime 404s. Results are **candidates for human review**.
 
 ### `forge-sutra migrate [graphPath]`
 

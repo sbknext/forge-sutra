@@ -58,6 +58,21 @@ export type IssueKind =
   | "hook_failure"
   | "untested_feature";
 
+/**
+ * Classification for cross_repo_orphan entries (Story 1.5.2).
+ * - confirmed_broken: no static suppression rule explains it — human review needed.
+ *   Does NOT mean "definitely a bug"; means static analysis found no explanation.
+ * - proxy_suppressed: path matches a next.config rewrite/proxy rule in the client graph.
+ * - dynamic_suppressed: path structurally matches a server route template ([param] or :param).
+ *   Structurally matched only — auth, method, and params are NOT validated.
+ * - external_suppressed: target host matches the external-host allowlist.
+ */
+export type OrphanClassification =
+  | "confirmed_broken"
+  | "proxy_suppressed"
+  | "dynamic_suppressed"
+  | "external_suppressed";
+
 export interface SutraNode {
   /** Stable deterministic id: `relative/path#symbol`. */
   id: string;
@@ -100,6 +115,16 @@ export interface SutraIssue {
   confidence?: number;
   /** How this finding was derived; absent = unknown. */
   provenance?: Provenance;
+  /**
+   * For cross_repo_orphan issues: four-class suppressor result (Story 1.5.2).
+   * Absent on non-orphan issues.
+   */
+  classification?: OrphanClassification;
+  /**
+   * Human-readable suppression reason or "no suppression rule matched" for confirmed_broken.
+   * Absent on non-orphan issues.
+   */
+  reason?: string;
 }
 
 export type HealthBand = "green" | "amber" | "red";

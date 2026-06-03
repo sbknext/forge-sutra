@@ -36,7 +36,8 @@ import { formatPrComment } from "./pr-comment.js";
 import { writeScaffolds, SCAFFOLD_KINDS } from "./scaffold.js";
 import { runScanPipeline, startWatch, type ScanTimings } from "./watch.js";
 import { runWatch } from "./watch-viewer.js";
-import { reconcileGraphs, buildReconcileOutput, type ReconcileOutput } from "./reconcile.js";
+import { reconcileGraphs, buildReconcileOutput, type ReconcileOutput, type ReconcileSummary } from "./reconcile.js";
+import { loadExternalHosts } from "./external-hosts.js";
 import { linkGraphs, writeLinkFile } from "./link.js";
 import { migrateFile } from "./migrate.js";
 import { exportContracts, exportGraphSchema, exportIssues, writeExport } from "./export.js";
@@ -497,18 +498,24 @@ function cmdLink(
   console.log(chalk.gray(`  Wrote ${out}\n`));
 }
 
-function cmdReconcile(opts: { client: string; server: string; out?: string }): void {
+function cmdReconcile(opts: { client: string; server: string; out?: string; verbose?: boolean }): void {
   let clientGraph: SutraGraph;
   let serverGraph: SutraGraph;
+  let clientRepoRoot: string;
   try {
-    clientGraph = loadGraphFile(path.resolve(opts.client));
-    serverGraph = loadGraphFile(path.resolve(opts.server));
+    const clientPath = path.resolve(opts.client);
+    const serverPath = path.resolve(opts.server);
+    clientGraph = loadGraphFile(clientPath);
+    serverGraph = loadGraphFile(serverPath);
+    // Infer client repo root as the dir two levels above the graph file (.sutra/graph.json)
+    clientRepoRoot = path.dirname(path.dirname(clientPath));
   } catch (err) {
     console.error(chalk.red(`\nError: ${String(err)}\n`));
     process.exit(1);
   }
 
-  const result = reconcileGraphs(clientGraph, serverGraph);
+  const externalHostList = loadExternalHosts(clientRepoRoot);
+  const result = reconcileGraphs(clientGraph, serverGraph, { externalHostList });
   const output = buildReconcileOutput(clientGraph, serverGraph, result);
 
   console.log(chalk.bold(`\nSutra reconcile — candidate cross-repo match\n`));
@@ -517,14 +524,46 @@ function cmdReconcile(opts: { client: string; server: string; out?: string }): v
   console.log(`  Checked: ${result.checked} calls · Matched: ${result.matched}`);
   console.log(chalk.gray("  Static match only — ignores auth, env URLs, proxy rewrites.\n"));
 
-  if (result.issues.length === 0) {
-    console.log(chalk.green("  No cross-repo orphans found (heuristic)."));
+  const { summary } = output;
+  const confirmedBroken = result.issues.filter((i) => i.classification === "confirmed_broken");
+  const suppressed = result.issues.filter((i) => i.classification !== "confirmed_broken");
+
+  if (confirmedBroken.length === 0) {
+    console.log(chalk.green(`  ${chalk.bold("0 confirmed broken")} (no suppression-escaped orphans) · ${suppressed.length} suppressed`));
+    console.log(chalk.gray("  \"confirmed broken\" = no static suppression rule explains the call. Not necessarily a runtime bug.\n"));
   } else {
-    console.log(chalk.bold(`  cross_repo_orphan (${result.issues.length}) — candidate:`));
-    for (const iss of result.issues) {
-      console.log(`    · ${iss.node}: ${iss.message}`);
+    console.log(
+      chalk.yellow(`  ${chalk.bold(`${confirmedBroken.length} confirmed broken`)} — needs human review · ${suppressed.length} suppressed`),
+    );
+    console.log(chalk.gray("  \"confirmed broken\" = no static suppression rule explains the call. Not necessarily a runtime bug.\n"));
+    for (const iss of confirmedBroken) {
+      console.log(`    · ${chalk.yellow(iss.node)}`);
+      console.log(`      ${iss.reason ?? "no suppression rule matched"}`);
     }
+    console.log();
   }
+
+  if (opts.verbose && result.issues.length > 0) {
+    console.log(chalk.bold("  All classified orphans (--verbose):\n"));
+    for (const iss of result.issues) {
+      const cls = iss.classification ?? "confirmed_broken";
+      const clsLabel =
+        cls === "confirmed_broken" ? chalk.yellow("confirmed_broken") :
+        cls === "proxy_suppressed" ? chalk.blue("proxy_suppressed") :
+        cls === "dynamic_suppressed" ? chalk.cyan("dynamic_suppressed (structurally matched only — not validated)") :
+        chalk.gray("external_suppressed");
+      console.log(`    · [${clsLabel}] ${iss.node}`);
+      if (iss.reason) console.log(`        ${chalk.gray(iss.reason)}`);
+    }
+    console.log();
+  }
+
+  console.log(
+    `  Summary: ${chalk.bold(String(summary.confirmed_broken))} confirmed_broken · ` +
+    `${summary.proxy_suppressed} proxy_suppressed · ` +
+    `${summary.dynamic_suppressed} dynamic_suppressed · ` +
+    `${summary.external_suppressed} external_suppressed`,
+  );
 
   if (opts.out) {
     const outPath = path.resolve(opts.out);
@@ -934,12 +973,14 @@ program
   .command("reconcile")
   .description(
     "Match client graph HTTP calls against server graph routes. " +
-    "Cross-repo static match — candidate results for human review.",
+    "Cross-repo static match — candidate results for human review. " +
+    "Each orphan is classified: confirmed_broken / proxy_suppressed / dynamic_suppressed / external_suppressed.",
   )
   .requiredOption("--client <graph>", "Path to client graph.json")
   .requiredOption("--server <graph>", "Path to server graph.json")
   .option("--out <file>", "Write reconcile JSON (e.g. .sutra/reconcile.json)")
-  .action((opts: { client: string; server: string; out?: string }) => {
+  .option("--verbose", "Print all four classes with suppression reasons (default: confirmed_broken only)")
+  .action((opts: { client: string; server: string; out?: string; verbose?: boolean }) => {
     cmdReconcile(opts);
   });
 

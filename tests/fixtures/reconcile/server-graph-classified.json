@@ -1,0 +1,33 @@
+{
+  "version": 6,
+  "repo": "brain-api",
+  "scanned_at": "2026-06-01T00:00:00.000Z",
+  "commit": "def5678",
+  "nodes": [
+    {
+      "id": "routes/users.js#GET /api/users",
+      "type": "route",
+      "name": "GET /api/users",
+      "file": "routes/users.js",
+      "line": 1,
+      "data_shape": null,
+      "feature": "users",
+      "language": "ts"
+    },
+    {
+      "id": "routes/items.js#GET /api/items/:id",
+      "type": "route",
+      "name": "GET /api/items/:id",
+      "file": "routes/items.js",
+      "line": 5,
+      "data_shape": null,
+      "feature": "items",
+      "language": "ts"
+    }
+  ],
+  "edges": [],
+  "issues": [],
+  "features": [],
+  "contracts": [],
+  "flows": []
+}

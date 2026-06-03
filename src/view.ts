@@ -1,4 +1,4 @@
-import type { SutraGraph, SutraFeature, SutraIssue, Severity } from "./types.js";
+import type { SutraGraph, SutraFeature, SutraIssue, Severity, OrphanClassification } from "./types.js";
 import type { SutraDiff } from "./diff.js";
 import type { ReconcileOutput } from "./reconcile.js";
 import { formatDiffSummary } from "./diff.js";
@@ -24,24 +24,71 @@ function diffHasChanges(diff: SutraDiff): boolean {
   );
 }
 
-/** Build reconcile summary panel — display-only, candidate. */
+/** Build reconcile summary panel — display-only, candidate. Story 1.5.2 classification. */
 function buildReconcilePanel(reconcile: ReconcileOutput): string {
   if (!reconcile) return "";
 
-  const orphanRows = reconcile.issues
-    .map((iss) => formatIssueRow(iss))
+  const confirmedBroken = reconcile.issues.filter(
+    (i) => (i.classification ?? "confirmed_broken") === "confirmed_broken",
+  );
+  const suppressed = reconcile.issues.filter(
+    (i) => i.classification !== "confirmed_broken" && i.classification !== undefined,
+  );
+  // Issues without classification field (older reconcile.json) fall into confirmed
+  const legacyUncls = reconcile.issues.filter((i) => i.classification === undefined);
+  const allConfirmed = [...confirmedBroken, ...legacyUncls];
+
+  const summary = (reconcile as ReconcileOutput & { summary?: { confirmed_broken?: number; proxy_suppressed?: number; dynamic_suppressed?: number; external_suppressed?: number } }).summary;
+
+  const confirmedCount = allConfirmed.length;
+  const suppressedCount = suppressed.length;
+  const badgeClass = confirmedCount === 0 ? "reconcile-badge-green" : "reconcile-badge-warn";
+  const badgeLabel = confirmedCount === 0
+    ? "0 confirmed broken"
+    : `${confirmedCount} confirmed broken`;
+
+  const confirmedRows = allConfirmed
+    .map((iss) => {
+      const reason = iss.reason ? `<span class="orphan-reason">${esc(iss.reason)}</span>` : "";
+      return `<li class="issue issue-warn"><span class="sev">WARN</span><code>${esc(iss.node)}</code> &mdash; ${esc(iss.feature)} ${reason}</li>`;
+    })
     .join("\n");
+
+  const suppressedRows = suppressed
+    .map((iss) => {
+      const cls = iss.classification as OrphanClassification;
+      const clsLabel = cls === "proxy_suppressed" ? "proxy" : cls === "dynamic_suppressed" ? "dynamic (structural, not validated)" : "external";
+      const reason = iss.reason ? `<span class="orphan-reason">${esc(iss.reason)}</span>` : "";
+      return `<li class="issue issue-info"><span class="suppressed-cls">[${esc(clsLabel)}]</span> <code>${esc(iss.node)}</code> &mdash; ${esc(iss.feature)} ${reason}</li>`;
+    })
+    .join("\n");
+
+  const suppressedToggle = suppressedCount > 0
+    ? `<details class="suppressed-toggle"><summary>Show suppressed (${suppressedCount})</summary><ul class="issue-list suppressed-list">${suppressedRows}</ul></details>`
+    : "";
+
+  const summaryLine = summary
+    ? `<p class="reconcile-summary-counts">${summary.confirmed_broken ?? 0} confirmed_broken &middot; ${summary.proxy_suppressed ?? 0} proxy_suppressed &middot; ${summary.dynamic_suppressed ?? 0} dynamic_suppressed &middot; ${summary.external_suppressed ?? 0} external_suppressed</p>`
+    : "";
 
   return `
 <section class="reconcile-panel">
-  <h2>Cross-repo reconcile</h2>
+  <h2>Cross-repo reconcile
+    <span class="reconcile-count-badge ${badgeClass}">${esc(badgeLabel)} &middot; ${suppressedCount} suppressed</span>
+  </h2>
   <p class="reconcile-meta">
     Client: <code>${esc(reconcile.client_repo)}</code> &rarr;
     Server: <code>${esc(reconcile.server_repo)}</code>
     &mdash; ${reconcile.matched}/${reconcile.checked} matched.
     Static match only (heuristic / candidate).
   </p>
-  ${reconcile.issues.length > 0 ? `<ul class="issue-list">${orphanRows}</ul>` : '<p class="no-issues">No cross-repo orphans.</p>'}
+  <p class="reconcile-honest-note">
+    &#9432; &ldquo;confirmed broken&rdquo; = no static suppression rule explains the call.
+    Does <strong>not</strong> mean &ldquo;definitely a runtime bug&rdquo; &mdash; human review needed.
+  </p>
+  ${summaryLine}
+  ${confirmedCount > 0 ? `<ul class="issue-list">${confirmedRows}</ul>` : '<p class="no-issues">No confirmed-broken cross-repo orphans.</p>'}
+  ${suppressedToggle}
 </section>`;
 }
 
@@ -264,7 +311,18 @@ header .counts span { background: #334155; padding: 0.15rem 0.6rem; border-radiu
 .drift-meta { font-size: 0.8rem; color: #64748b; margin-bottom: 0.75rem; }
 .drift-group { margin-bottom: 0.75rem; font-size: 0.82rem; }
 .reconcile-panel { background: #fff; border: 1px solid #cbd5e1; border-left: 4px solid #8b5cf6; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.25rem; }
-.reconcile-panel h2 { font-size: 1rem; font-weight: 700; margin-bottom: 0.35rem; }
+.reconcile-panel h2 { font-size: 1rem; font-weight: 700; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap; }
+.reconcile-count-badge { font-size: 0.72rem; font-weight: 700; padding: 0.15rem 0.55rem; border-radius: 999px; }
+.reconcile-badge-green { background: #dcfce7; color: #166534; }
+.reconcile-badge-warn { background: #fef9c3; color: #854d0e; }
+.reconcile-meta { font-size: 0.8rem; color: #64748b; margin-bottom: 0.5rem; }
+.reconcile-honest-note { font-size: 0.78rem; color: #64748b; margin-bottom: 0.65rem; font-style: italic; }
+.reconcile-summary-counts { font-size: 0.78rem; color: #475569; margin-bottom: 0.65rem; background: #f8fafc; border-radius: 4px; padding: 0.25rem 0.5rem; }
+.suppressed-toggle { font-size: 0.82rem; margin-top: 0.65rem; color: #475569; }
+.suppressed-toggle summary { cursor: pointer; font-weight: 600; padding: 0.25rem 0; }
+.suppressed-list { margin-top: 0.4rem; }
+.suppressed-cls { font-size: 0.72rem; font-weight: 700; color: #0369a1; background: #e0f2fe; padding: 0.1rem 0.35rem; border-radius: 3px; margin-right: 0.3rem; }
+.orphan-reason { font-size: 0.72rem; color: #64748b; margin-left: 0.35rem; font-style: italic; }
 .contract-filter { background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.65rem 1rem; margin-bottom: 1rem; font-size: 0.82rem; }
 .contract-filter label { margin-right: 0.5rem; color: #475569; }
 .contract-filter select { padding: 0.25rem 0.5rem; border-radius: 4px; border: 1px solid #cbd5e1; }

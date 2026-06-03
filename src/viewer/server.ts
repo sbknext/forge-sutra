@@ -231,7 +231,8 @@ export function startViewerServer(
           "Cache-Control": "no-store",
           Connection: "keep-alive",
         });
-        res.write(": connected\n\n");
+        // SSE preamble: retry interval so browsers know reconnect cadence
+        res.write(": connected\nretry: 3000\n\n");
         sseClients.add(res);
         req.on("close", () => sseClients.delete(res));
         return;

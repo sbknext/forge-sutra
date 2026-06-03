@@ -386,15 +386,21 @@ async function cmdScan(
 
 async function cmdWatch(
   repoPath: string | undefined,
-  opts: { port?: number; outputDir?: string },
+  opts: { port?: number; outputDir?: string; debounce?: number },
 ): Promise<void> {
   const cwd = resolveArtifactRoot(opts.outputDir);
   const repoRoot = path.resolve(repoPath ?? process.cwd());
 
-  const handle = await runWatch(repoRoot, cwd, { port: opts.port });
+  const { WATCH_DEBOUNCE_MS: defaultDebounce } = await import("./watch-viewer.js");
+  const debounceMs = opts.debounce ?? defaultDebounce;
 
-  console.log(chalk.bold(`\nSutra watch → ${repoRoot}\n`));
-  console.log(chalk.cyan(`  Viewer: ${handle.url}`));
+  const handle = await runWatch(repoRoot, cwd, { port: opts.port, debounceMs });
+
+  // AC: startup message — URL, repo path, and debounce window
+  console.log(chalk.bold(`\nSutra watch → ${repoRoot}`));
+  console.log(chalk.cyan(`  Viewer:   ${handle.url}`));
+  console.log(chalk.gray(`  Repo:     ${repoRoot}`));
+  console.log(chalk.gray(`  Debounce: ${debounceMs} ms`));
   console.log(chalk.gray("  Live re-scan on file change · Ctrl+C to stop.\n"));
 
   if (process.platform === "darwin") {
@@ -881,7 +887,12 @@ program
   )
   .option("--port <n>", "Viewer port (default 4577)", (v) => parseInt(v, 10))
   .option("--output-dir <dir>", "Write .sutra/ artifacts here (live rescan)")
-  .action(async (repoPath: string | undefined, opts: { port?: number; outputDir?: string }) => {
+  .option(
+    "--debounce <ms>",
+    "Debounce window in ms for coalescing file saves (default 500)",
+    (v) => parseInt(v, 10),
+  )
+  .action(async (repoPath: string | undefined, opts: { port?: number; outputDir?: string; debounce?: number }) => {
     await cmdWatch(repoPath, opts);
   });
 

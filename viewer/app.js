@@ -659,17 +659,74 @@
     window.SutraEcosystem.init(window.SUTRA_LINK_VERSION);
   }
 
-  /* Story 3.5 — live push via SSE when /events is available */
+  /* Story 3.5 / 1.5.1 — live push via SSE when /events is available */
   if (typeof EventSource !== "undefined") {
     try {
       var es = new EventSource("/events");
+      var highlightTimer = null;
+
+      function setLiveConnected(msg) {
+        var el = document.getElementById("live-status");
+        if (!el) return;
+        el.textContent = msg;
+        el.classList.remove("live-disconnected");
+        el.classList.add("live-connected");
+      }
+
+      function setLiveDisconnected(msg) {
+        var el = document.getElementById("live-status");
+        if (!el) return;
+        el.textContent = msg;
+        el.classList.remove("live-connected");
+        el.classList.add("live-disconnected");
+      }
+
+      /**
+       * Candidate UI: apply transient yellow highlight on changed feature cards.
+       * "structure changed" = node set, issue count, or health score changed.
+       * Auto-clears after 5 s. Not a semantic bug detector.
+       */
+      function applyChangedHighlights(changedIds) {
+        if (!changedIds || !changedIds.length) return;
+        if (highlightTimer) clearTimeout(highlightTimer);
+        var grid = document.getElementById("feature-grid");
+        if (!grid) return;
+        for (var i = 0; i < changedIds.length; i++) {
+          var id = changedIds[i];
+          var cards = grid.querySelectorAll('[data-feature="' + id + '"]');
+          for (var j = 0; j < cards.length; j++) {
+            cards[j].classList.add("card-changed");
+            var existing = cards[j].querySelector(".card-changed-badge");
+            if (!existing) {
+              var badge = document.createElement("span");
+              badge.className = "card-changed-badge";
+              badge.title = "Candidate: structure changed (node set / issue count / health score) — not a semantic bug detector";
+              badge.textContent = "structure changed";
+              var header = cards[j].querySelector(".card-header");
+              if (header) header.appendChild(badge);
+            }
+          }
+        }
+        highlightTimer = setTimeout(function () {
+          var changed = grid.querySelectorAll(".card-changed");
+          for (var k = 0; k < changed.length; k++) {
+            changed[k].classList.remove("card-changed");
+            var b = changed[k].querySelector(".card-changed-badge");
+            if (b) b.remove();
+          }
+          highlightTimer = null;
+        }, 5000);
+      }
+
       es.addEventListener("graph", function (ev) {
         try {
-          var graph = JSON.parse(ev.data);
-          if (graph.version === GRAPH_VERSION) {
-            renderGraph(graph);
+          var payload = JSON.parse(ev.data);
+          if (payload.version === GRAPH_VERSION) {
+            var changedIds = payload.changedFeatureIds || [];
+            renderGraph(payload);
             handleRoute();
-            document.getElementById("live-status").textContent = "Live · updated " + graph.scanned_at;
+            applyChangedHighlights(changedIds);
+            setLiveConnected("Live · updated " + payload.scanned_at);
           }
         } catch (_) {
           /* ignore malformed push */
@@ -678,14 +735,16 @@
       es.addEventListener("scan-error", function (ev) {
         try {
           var data = JSON.parse(ev.data);
-          document.getElementById("live-status").textContent =
-            "Scan error (showing last good graph): " + (data.message || "unknown");
+          setLiveConnected("Scan error (showing last good graph): " + (data.message || "unknown"));
         } catch (_) {
-          document.getElementById("live-status").textContent = "Scan error — showing last good graph";
+          setLiveConnected("Scan error — showing last good graph");
         }
       });
       es.onopen = function () {
-        document.getElementById("live-status").textContent = "Live · watching for changes";
+        setLiveConnected("Live · watching for changes");
+      };
+      es.onerror = function () {
+        setLiveDisconnected("Disconnected");
       };
     } catch (_) {
       /* SSE not available — manual reload only */

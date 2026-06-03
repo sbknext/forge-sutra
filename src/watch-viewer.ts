@@ -1,6 +1,7 @@
 /**
- * Story 3.5 — live watch mode: incremental re-scan + SSE push to viewer.
+ * Story 3.5 / 1.5.1 — live watch mode: incremental re-scan + SSE push to viewer.
  * Reuses runScanPipeline; viewer stays a leaf consumer.
+ * AC: changedFeatureIds delta injected into SSE payload for card highlighting.
  */
 
 import path from "node:path";
@@ -14,7 +15,8 @@ import {
   type SutraGraph,
 } from "./types.js";
 
-export const WATCH_DEBOUNCE_MS = 200;
+/** Default debounce window (ms). Configurable via --debounce flag. */
+export const WATCH_DEBOUNCE_MS = 500;
 
 export interface RunWatchOptions {
   port?: number;
@@ -71,8 +73,23 @@ export async function runWatch(
     scanning = true;
     try {
       const result = runScanPipeline(repoRoot, cwd, commit);
+      const prevGraph = lastGoodGraph;
       lastGoodGraph = result.graph;
-      server.broadcastGraph?.(result.graph);
+
+      // Print incremental cache stats: N cached · M parsed
+      if (result.cacheStats) {
+        const { hits, misses } = result.cacheStats;
+        process.stderr.write(`  cache: ${hits} cached · ${misses} parsed\n`);
+      }
+
+      // Compute delta for changed-card highlighting (candidate UI)
+      const changedFeatureIds = prevGraph
+        ? computeChangedFeatureIds(prevGraph, result.graph)
+        : [];
+
+      // Inject changedFeatureIds alongside the full graph in the SSE payload
+      const payload = { ...result.graph, changedFeatureIds };
+      server.broadcastGraph?.(payload);
     } catch (err) {
       server.broadcastScanError?.(String(err));
     } finally {
@@ -115,4 +132,38 @@ export function graphBodyForCompare(
 ): Omit<SutraGraph, "scanned_at" | "commit"> {
   const { scanned_at: _, commit: __, ...rest } = graph;
   return rest;
+}
+
+/**
+ * Compute which feature IDs changed between prev and next scan.
+ * "Changed" = node_ids set, issue_count, or health.score differs.
+ * Candidate label: structural change only — not semantic code meaning.
+ */
+export function computeChangedFeatureIds(
+  prev: SutraGraph,
+  next: SutraGraph,
+): string[] {
+  const prevMap = new Map(prev.features.map((f) => [f.id, f]));
+  const changed: string[] = [];
+
+  for (const feat of next.features) {
+    const p = prevMap.get(feat.id);
+    if (!p) {
+      // new feature — mark as changed
+      changed.push(feat.id);
+      continue;
+    }
+    const nodeSetChanged =
+      feat.node_ids.length !== p.node_ids.length ||
+      feat.node_ids.some((id) => !p.node_ids.includes(id));
+    const issueCountChanged = feat.issue_count !== p.issue_count;
+    const healthChanged =
+      (feat.health?.score ?? null) !== (p.health?.score ?? null);
+
+    if (nodeSetChanged || issueCountChanged || healthChanged) {
+      changed.push(feat.id);
+    }
+  }
+
+  return changed;
 }

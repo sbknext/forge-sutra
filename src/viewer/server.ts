@@ -19,6 +19,7 @@ import {
   type SutraGraph,
 } from "../types.js";
 import { emptyLinkResult } from "../link.js";
+import { handleExplainRoute, createRateLimiter } from "./explain.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = path.resolve(__dirname, "../..");
@@ -185,6 +186,8 @@ export function startViewerServer(
   return new Promise((resolve, reject) => {
     const sseClients = new Set<http.ServerResponse>();
     let boundPort = opts?.port ?? DEFAULT_VIEWER_PORT;
+    // Story 1.5.4 — rate limiter: 10 req/min per running instance (in-memory, not persistent)
+    const explainRateLimiter = createRateLimiter();
 
     const server = http.createServer((req, res) => {
       const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -251,6 +254,11 @@ export function startViewerServer(
           .replace("__LINK_VERSION__", String(LINK_VERSION));
         res.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-store" });
         res.end(html);
+        return;
+      }
+
+      // Story 1.5.4 — "Explain this feature" POST /explain/:featureId
+      if (handleExplainRoute(req, res, { cwd, rateLimiter: explainRateLimiter })) {
         return;
       }
 

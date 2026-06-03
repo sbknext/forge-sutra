@@ -123,6 +123,50 @@ forge-sutra watch
 forge-sutra watch --port 4600
 ```
 
+### "Explain this feature" (AI — live viewer only)
+
+Click any feature card in the drill-down panel to open it. An **Explain (AI)** button appears at the bottom of every drill-down. Clicking it calls `POST /explain/:featureId` on the viewer backend, which builds a structural prompt from the feature's node list, issue set, and health score, then streams a candid plain-English explanation back to the panel token-by-token.
+
+**Honesty rules (mandatory):**
+
+Every explanation is preceded by the non-removable label:
+
+> AI explanation — derived from code structure, not from documentation. Candidate — not a complete description.
+
+The system prompt instructs the model to say "appears to," "structurally suggests," or "candidate" when inferring intent. The model is told never to claim runtime correctness, test status, or security properties.
+
+After the explanation, a CTA appears: **Save this explanation to Brain memory — `brain memory_save`.**
+
+**Setup:**
+
+```bash
+# OpenAI (default)
+export SUTRA_AI_API_KEY=sk-...
+forge-sutra watch
+
+# Anthropic
+export SUTRA_AI_API_KEY=sk-ant-...
+export SUTRA_AI_PROVIDER=anthropic
+forge-sutra watch
+
+# Model override (optional; default: gpt-4o-mini / claude-3-haiku-20240307)
+export SUTRA_AI_MODEL=gpt-4o
+```
+
+**Environment variables:**
+
+| Variable | Default | Description |
+|---|---|---|
+| `SUTRA_AI_API_KEY` | (required) | API key for the AI provider. Affects both `--ai` scan flag and the live Explain panel. |
+| `SUTRA_AI_PROVIDER` | `openai` | Provider: `openai` or `anthropic`. AI — candidate enum, extend as needed. |
+| `SUTRA_AI_MODEL` | `gpt-4o-mini` / `claude-3-haiku-20240307` | Model to use for explanations. |
+
+**Rate limit:** 10 Explain calls per minute per running viewer instance (in-memory, not persistent across restarts). Candidate threshold — adjust based on provider costs. Excess calls return a clear "Rate limit — try again in N seconds" message.
+
+**Static mode:** The Explain button is hidden in `forge-sutra share` artifacts (`__SUTRA_STATIC__`). AI calls require a live viewer server. The panel shows "AI explanation available in the live viewer (`forge-sutra watch`)." instead.
+
+**Missing key:** If `SUTRA_AI_API_KEY` is not set, the Explain button is shown but clicking it returns the message "AI explanations require SUTRA_AI_API_KEY — see README" rather than a raw error.
+
 ### `forge-sutra share [repoPath]`
 
 Scan a repo and produce a **self-contained HTML artifact** — one file, no server required, all viewer assets inlined.

@@ -123,6 +123,38 @@ forge-sutra watch
 forge-sutra watch --port 4600
 ```
 
+### `forge-sutra share [repoPath]`
+
+Scan a repo and produce a **self-contained HTML artifact** — one file, no server required, all viewer assets inlined.
+
+```
+forge-sutra share
+forge-sutra share ./my-repo
+forge-sutra share --out /tmp/my-graph.html
+```
+
+Output: `.sutra/share/view-<repo>-<YYYYMMDD-HHMMSS>.html`
+
+- **Single file.** CSS, JS, and graph data all inlined. Open in any browser without installing anything.
+- **Snapshot label.** Every artifact displays a `Snapshot taken: <ISO date>` header so recipients know they are looking at a point-in-time export, not a live feed.
+- **Static mode.** SSE live-push, "Reload graph", and "Export view" are suppressed (`window.__SUTRA_STATIC__ = true`). The "Share this view" button becomes **"Copy local path"** — copies the local file path + URL hash (useful for passing to a teammate).
+- **No API keys.** Scan runs in the same masking context as the normal viewer; raw secrets are never emitted to the graph.
+- **AI labels survive.** If the scan was run with `--ai`, `ai_name` and `ai_summary` fields appear in the artifact with their **AI** badge.
+- **Mermaid requires internet.** Feature-graph diagrams load Mermaid from CDN — the only external dependency.
+
+**CTA printed after write:**
+
+```
+Host this file on any static server (GitHub Pages, Cloudflare Pages, Netlify)
+— or give it memory: https://docs.sbknext.com/brain/install
+```
+
+**Typical size:** ~200–800 KB depending on graph size (candidate estimate — varies by repo).
+
+**Flags:**
+- `--out <path>` — override the default output location.
+- `--output-dir <dir>` — write `.sutra/` artifacts here instead of `cwd`.
+
 ### Search, filter & share (viewer)
 
 The viewer SPA supports substring search, health-band toggles, confidence threshold (elements without `confidence` show only at threshold `0`), and issue-kind filters. **Share this view** encodes filter state in the URL hash; **Export view** writes a self-contained `.sutra/view.<slug>.html` via `POST /export-view`.

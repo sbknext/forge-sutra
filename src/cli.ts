@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
 import chalk from "chalk";
 import { renderView } from "./view.js";
+import { writeShareArtifact } from "./commands/share.js";
 import {
   SUTRA_DIR,
   GRAPH_FILE,
@@ -789,6 +790,39 @@ function cmdExport(
   }
 }
 
+// ── share command (Story 1.5.3) ───────────────────────────────────────────────
+
+function cmdShare(
+  repoPath: string | undefined,
+  opts: { out?: string; outputDir?: string },
+): void {
+  const cwd = resolveArtifactRoot(opts.outputDir);
+  const repoRoot = path.resolve(repoPath ?? process.cwd());
+  const commit = getCommit(repoRoot);
+
+  console.log(chalk.bold(`\nSutra share → ${repoRoot}\n`));
+  console.log(chalk.gray("  Scanning (incremental cache)…"));
+
+  const { graph } = runScanPipeline(repoRoot, cwd, commit);
+
+  const result = writeShareArtifact(graph, cwd, { out: opts.out });
+
+  const sizeMb = (result.sizeBytes / 1024 / 1024).toFixed(2);
+
+  console.log(chalk.bold(`\n  Share artifact written → ${result.outPath}`));
+  console.log(chalk.gray(`  Size: ${sizeMb} MB (all viewer assets inlined)`));
+  console.log();
+  console.log(
+    chalk.cyan("  Host this file on any static server") +
+    chalk.gray(" — or give it memory:"),
+  );
+  console.log(chalk.gray("    https://docs.sbknext.com/brain/install"));
+  console.log();
+  console.log(chalk.gray("  Candidate results only — heuristic structural scan, not complete analysis."));
+  console.log(chalk.gray("  Mermaid diagrams require internet access (CDN)."));
+  console.log();
+}
+
 // ── migrate command ───────────────────────────────────────────────────────────
 
 function cmdMigrate(graphPath: string | undefined): void {
@@ -1019,6 +1053,26 @@ program
   )
   .action((graphPath: string | undefined) => {
     cmdMigrate(graphPath);
+  });
+
+program
+  .command("share [repoPath]")
+  .description(
+    "Scan repo and produce a self-contained shareable HTML artifact at " +
+    ".sutra/share/view-<repo>-<timestamp>.html. " +
+    "Embeds graph data + viewer SPA inline — no server required to open. " +
+    "Candidate results only — heuristic structural scan.",
+  )
+  .option(
+    "--out <path>",
+    "Override default output path for the share artifact",
+  )
+  .option(
+    "--output-dir <dir>",
+    "Write .sutra/ artifacts here instead of process.cwd()",
+  )
+  .action((repoPath: string | undefined, opts: { out?: string; outputDir?: string }) => {
+    cmdShare(repoPath, opts);
   });
 
 program.parse(process.argv);

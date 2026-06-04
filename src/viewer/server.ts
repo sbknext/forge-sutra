@@ -309,18 +309,27 @@ export function startViewerServer(
       res.end(JSON.stringify({ error: "not found" }));
     });
 
-    const broadcastGraph = (graph: unknown): void => {
-      const payload = `event: graph\ndata: ${JSON.stringify(graph)}\n\n`;
+    const broadcastToClients = (payload: string): void => {
       for (const client of sseClients) {
-        client.write(payload);
+        try {
+          if (client.writableEnded || client.destroyed) {
+            sseClients.delete(client);
+            continue;
+          }
+          client.write(payload);
+        } catch {
+          // Dead/erroring socket — prune so it cannot block future broadcasts or leak.
+          sseClients.delete(client);
+        }
       }
     };
 
+    const broadcastGraph = (graph: unknown): void => {
+      broadcastToClients(`event: graph\ndata: ${JSON.stringify(graph)}\n\n`);
+    };
+
     const broadcastScanError = (message: string): void => {
-      const payload = `event: scan-error\ndata: ${JSON.stringify({ message })}\n\n`;
-      for (const client of sseClients) {
-        client.write(payload);
-      }
+      broadcastToClients(`event: scan-error\ndata: ${JSON.stringify({ message })}\n\n`);
     };
 
     server.on("error", reject);

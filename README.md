@@ -120,8 +120,39 @@ Live mode: starts the viewer SPA, runs an initial scan, then re-scans on file ch
 
 ```
 forge-sutra watch
-forge-sutra watch --port 4600
+forge-sutra watch --port 4600          # override default port 4577
+forge-sutra watch --debounce 800       # coalesce saves over an 800 ms window (default 500)
 ```
+
+On startup the terminal prints the viewer URL, the repo path, and the active debounce window, e.g.:
+
+```
+Sutra watch → /path/to/repo
+  Viewer:   http://127.0.0.1:4577/
+  Repo:     /path/to/repo
+  Debounce: 500 ms
+  Live re-scan on file change · Ctrl+C to stop.
+```
+
+**Flags:**
+- `--port <n>` — viewer port (default `4577`). The server always binds `127.0.0.1` only — never `0.0.0.0` / all interfaces.
+- `--debounce <ms>` — file-save coalescing window (default `500`). A burst of saves inside one window triggers exactly one re-scan.
+- `--output-dir <dir>` — write `.sutra/` artifacts here instead of `cwd`.
+
+**How live push works (SSE):**
+- The viewer opens an `EventSource` to `/events`. After each debounced re-scan the server broadcasts a `graph` event carrying the full graph plus a `changedFeatureIds` array.
+- Re-scans use the incremental content-hash cache (`.sutra/cache/`); only changed files are re-parsed. The cache line `N cached · M parsed` is printed on each run.
+- **Live / Disconnected indicator:** the viewer header shows a green **Live** badge while the SSE connection is open and a grey **Disconnected** badge when it drops.
+- **Auto-reconnect:** the server emits a `retry: 3000` preamble, so a browser tab reconnects ~3 s after the server restarts — no manual reload needed.
+- **Changed-card highlight (candidate UI):** feature cards whose **node set, issue count, or health score** changed since the last push get a transient yellow border + a **`structure changed`** badge that auto-clears after 5 s. This reflects *graph-structural* change only — it is **not** a semantic bug detector and never claims a bug was introduced.
+
+**`watch` vs `scan --watch`:** both re-scan on file change and share one code path (`runScanPipeline`). The distinction:
+- `forge-sutra scan --watch` is **CLI-only** — it re-scans and prints a delta summary to the terminal, writes `.sutra/graph.json` / `graph.prev.json` / `diff.json`, but starts **no server**. Use it for terminal/CI-adjacent loops.
+- `forge-sutra watch` starts the **viewer SPA + SSE server** and live-pushes the graph to the browser. Use it for the interactive "watch the graph update as you type" experience.
+
+**Platform notes:** chokidar drives the watcher (macOS + Linux verified). SSE requires a browser `EventSource` (all evergreen browsers); SSE on older Node-bundled Windows runtimes is out of scope for this command.
+
+> **Demo GIF — placeholder.** A 30-second screen capture of the graph updating live as files are saved belongs here (the Show HN anchor clip). Recording it is a manual/binary step left to the maintainer; drop the GIF at `docs/watch-demo.gif` and link it from this section.
 
 ### "Explain this feature" (AI — live viewer only)
 

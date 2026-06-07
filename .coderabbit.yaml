@@ -1,0 +1,18 @@
+language: en-US
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!**/dist/**"
+    - "!**/node_modules/**"
+    - "!**/*.lock"
+    - "!**/package-lock.json"
+    - "!**/.next/**"
+    - "!**/*.min.js"
+chat:
+  auto_reply: true

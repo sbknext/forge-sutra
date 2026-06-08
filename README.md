@@ -182,6 +182,30 @@ Migrates **structure only** — does not re-scan or fix semantic issues.
 
 When `GRAPH_VERSION` bumps, run `forge-sutra migrate` on cached graphs before diffing or viewing.
 
+## Development
+
+```bash
+# Install dependencies
+npm ci
+
+# Compile TypeScript → dist/
+npm run build
+
+# Link the CLI locally so `forge-sutra` resolves to your build
+npm link
+
+# Run tests
+npm test
+
+# Rebuild on change (watch mode)
+npm run build -- --watch
+```
+
+Type-check only (no emit): `npx tsc --noEmit`.
+
+The main CLI entry point is `src/index.ts`; scanner logic lives under `src/scanners/`.
+Graph schema and migration code are in `src/graph/`.
+
 ---
 
 ## graph.json schema

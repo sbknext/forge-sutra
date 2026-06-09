@@ -112,11 +112,13 @@
         contractHtml +
         issuesHtml +
         flowsHtml +
+        buildExplainPanel(feature) +
         "</div>";
 
       document.getElementById("drilldown-back").onclick = function () {
         if (typeof onBack === "function") onBack();
       };
+      wireExplainPanel(feature.id);
 
       var cyMount = document.getElementById("cy-root");
       if (sub.nodes.length > 0 && window.cytoscape) {
@@ -298,6 +300,121 @@
     });
     html += "</section>";
     return html;
+  }
+
+  // ── Story 1.5.4 — Explain this feature ───────────────────────────────────────
+
+  /**
+   * Build the Explain panel HTML for a feature drill-down.
+   *
+   * Gate rules:
+   * - In static mode (window.__SUTRA_STATIC__): show "available in live viewer" note.
+   * - In live mode: show Explain button with streaming text area.
+   *
+   * Honesty rule: AI label is structural, not opt-out.
+   * Every explanation carries the mandatory "AI explanation — candidate" label.
+   * The "Save to Brain" CTA is appended after explanation loads (per story DoD).
+   */
+  function buildExplainPanel(feature) {
+    var isStatic = !!(window.__SUTRA_STATIC__);
+    var html = '<section class="drill-section drill-explain" id="explain-section-' + esc(feature.id) + '">';
+    html += '<h3>Explain this feature</h3>';
+
+    if (isStatic) {
+      // Static artifact: AI calls need a live server
+      html += '<p class="explain-static-note">' +
+        'AI explanation available in the live viewer (<code>forge-sutra watch</code>).' +
+        '</p>';
+    } else {
+      html += '<button type="button" class="explain-btn" id="explain-btn-' + esc(feature.id) + '">' +
+        'Explain (AI)' +
+        '</button>';
+      html += '<div class="explain-output hidden" id="explain-output-' + esc(feature.id) + '">' +
+        '<div class="explain-label">' +
+        'AI explanation — derived from code structure, not from documentation. ' +
+        'Candidate — not a complete description.' +
+        '</div>' +
+        '<div class="explain-text" id="explain-text-' + esc(feature.id) + '"></div>' +
+        '<div class="explain-brain-cta hidden" id="explain-cta-' + esc(feature.id) + '">' +
+        'Save this explanation to Brain memory &mdash; <code>brain memory_save</code>' +
+        '</div>' +
+        '</div>';
+    }
+
+    html += '</section>';
+    return html;
+  }
+
+  /**
+   * Wire the Explain button for a feature drill-down.
+   * Streams the AI response token-by-token via fetch + ReadableStream.
+   * Candidate: streaming via fetch body reader (chunked transfer from server).
+   */
+  function wireExplainPanel(featureId) {
+    var btn = document.getElementById("explain-btn-" + featureId);
+    if (!btn) return; // static mode or already wired
+
+    btn.addEventListener("click", function () {
+      btn.disabled = true;
+      btn.textContent = "Explaining…";
+
+      var output = document.getElementById("explain-output-" + featureId);
+      var textEl = document.getElementById("explain-text-" + featureId);
+      var ctaEl = document.getElementById("explain-cta-" + featureId);
+
+      if (output) output.classList.remove("hidden");
+      if (textEl) textEl.textContent = "";
+
+      // Encode featureId for URL (may contain slashes, hashes, etc.)
+      var url = "/explain/" + encodeURIComponent(featureId);
+
+      fetch(url, { method: "POST" })
+        .then(function (res) {
+          if (!res.ok) {
+            return res.json().then(function (body) {
+              var msg = (body && body.error) ? body.error : ("HTTP " + res.status);
+              if (textEl) textEl.textContent = msg;
+              btn.textContent = "Explain (AI)";
+              btn.disabled = false;
+            });
+          }
+
+          // Stream tokens
+          var reader = res.body && res.body.getReader();
+          if (!reader) {
+            if (textEl) textEl.textContent = "(No streaming response body)";
+            btn.textContent = "Explain (AI)";
+            btn.disabled = false;
+            return;
+          }
+
+          var decoder = new TextDecoder();
+          var accumulated = "";
+
+          function pump() {
+            return reader.read().then(function (result) {
+              if (result.done) {
+                // Explanation complete — show Brain CTA
+                if (ctaEl) ctaEl.classList.remove("hidden");
+                btn.textContent = "Re-explain (AI)";
+                btn.disabled = false;
+                return;
+              }
+              var chunk = decoder.decode(result.value, { stream: true });
+              accumulated += chunk;
+              if (textEl) textEl.textContent = accumulated;
+              return pump();
+            });
+          }
+
+          return pump();
+        })
+        .catch(function (err) {
+          if (textEl) textEl.textContent = "Explain error: " + String(err.message || err);
+          btn.textContent = "Explain (AI)";
+          btn.disabled = false;
+        });
+    });
   }
 
   function shortId(id) {

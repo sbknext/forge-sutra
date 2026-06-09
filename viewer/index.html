@@ -16,6 +16,7 @@
   <h1>Sutra Viewer</h1>
   <div class="meta" id="header-meta">Loading graph…</div>
   <div class="counts" id="header-counts"></div>
+  <div id="live-status" class="live-status-badge live-disconnected" title="SSE connection status — candidate live mode">Disconnected</div>
 </header>
 
 <div class="disclaimer" id="disclaimer">
@@ -38,7 +39,7 @@
   <label>Confidence ≥ <input type="range" id="filter-confidence" min="0" max="1" step="0.05" value="0"> <span id="conf-readout">0.00</span></label>
   <span id="issue-kind-filter"></span>
   <span id="filter-readout" class="meta"></span>
-  <button type="button" id="btn-share">Share this view</button>
+  <button type="button" id="btn-share">Share this view</button><!-- label updated to "Copy local path" in static mode -->
   <button type="button" id="btn-export">Export view</button>
   <div id="filter-empty" class="error-state hidden">0 features match — clear filters</div>
 </div>

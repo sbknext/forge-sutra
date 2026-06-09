@@ -614,6 +614,25 @@
     };
   }
 
+  /* Story 1.5.3 — static mode gate.
+   * When window.__SUTRA_STATIC__ is true (set by the share artifact), suppress:
+   *   - EventSource / SSE live push
+   *   - "Reload graph" button (no server to reload from)
+   *   - "Live" badge (replaced by snapshot label in header)
+   *   - "Export view" button (POST /export-view needs a live server)
+   * "Share this view" button is kept but copy semantics change to local path + hash.
+   */
+  var IS_STATIC = !!window.__SUTRA_STATIC__;
+
+  if (IS_STATIC) {
+    var reloadBtn = document.getElementById("btn-reload");
+    if (reloadBtn) reloadBtn.style.display = "none";
+    var liveStatus = document.getElementById("live-status");
+    if (liveStatus) liveStatus.style.display = "none";
+    var exportBtn = document.getElementById("btn-export");
+    if (exportBtn) exportBtn.style.display = "none";
+  }
+
   document.getElementById("btn-reload").addEventListener("click", loadGraph);
   document.getElementById("sort-key").addEventListener("change", renderGrid);
 
@@ -629,7 +648,19 @@
   document.getElementById("btn-share").addEventListener("click", function () {
     var enc = encodeFilterState();
     location.hash = encodeURIComponent(enc);
-    navigator.clipboard.writeText(location.href).catch(function () {});
+    if (IS_STATIC) {
+      /* Static artifact: copy local file path + hash.
+       * Honest: this is a local path, not a hosted URL. */
+      var localPath = (window.__SUTRA_SHARE_PATH__ || location.href) + location.hash;
+      navigator.clipboard.writeText(localPath).catch(function () {});
+      var shareBtn = document.getElementById("btn-share");
+      if (shareBtn) {
+        shareBtn.textContent = "Copied local path";
+        setTimeout(function () { shareBtn.textContent = "Copy local path"; }, 2000);
+      }
+    } else {
+      navigator.clipboard.writeText(location.href).catch(function () {});
+    }
   });
   document.getElementById("btn-export").addEventListener("click", function () {
     fetch("/export-view", {
@@ -653,23 +684,92 @@
 
   window.addEventListener("hashchange", handleRoute);
 
-  loadGraph();
+  if (IS_STATIC) {
+    /* Static mode: graph is already inlined as window.__SUTRA_GRAPH__ — render directly. */
+    if (window.__SUTRA_GRAPH__) {
+      renderGraph(window.__SUTRA_GRAPH__);
+      handleRoute();
+    }
+    /* Update share button label to reflect local-path semantics */
+    var shareBtn2 = document.getElementById("btn-share");
+    if (shareBtn2) shareBtn2.textContent = "Copy local path";
+  } else {
+    loadGraph();
 
-  if (window.SutraEcosystem) {
-    window.SutraEcosystem.init(window.SUTRA_LINK_VERSION);
+    if (window.SutraEcosystem) {
+      window.SutraEcosystem.init(window.SUTRA_LINK_VERSION);
+    }
   }
 
-  /* Story 3.5 — live push via SSE when /events is available */
-  if (typeof EventSource !== "undefined") {
+  /* Story 3.5 / 1.5.1 — live push via SSE when /events is available.
+   * Suppressed in static mode (no server). */
+  if (!IS_STATIC && typeof EventSource !== "undefined") {
     try {
       var es = new EventSource("/events");
+      var highlightTimer = null;
+
+      function setLiveConnected(msg) {
+        var el = document.getElementById("live-status");
+        if (!el) return;
+        el.textContent = msg;
+        el.classList.remove("live-disconnected");
+        el.classList.add("live-connected");
+      }
+
+      function setLiveDisconnected(msg) {
+        var el = document.getElementById("live-status");
+        if (!el) return;
+        el.textContent = msg;
+        el.classList.remove("live-connected");
+        el.classList.add("live-disconnected");
+      }
+
+      /**
+       * Candidate UI: apply transient yellow highlight on changed feature cards.
+       * "structure changed" = node set, issue count, or health score changed.
+       * Auto-clears after 5 s. Not a semantic bug detector.
+       */
+      function applyChangedHighlights(changedIds) {
+        if (!changedIds || !changedIds.length) return;
+        if (highlightTimer) clearTimeout(highlightTimer);
+        var grid = document.getElementById("feature-grid");
+        if (!grid) return;
+        for (var i = 0; i < changedIds.length; i++) {
+          var id = changedIds[i];
+          var cards = grid.querySelectorAll('[data-feature="' + id + '"]');
+          for (var j = 0; j < cards.length; j++) {
+            cards[j].classList.add("card-changed");
+            var existing = cards[j].querySelector(".card-changed-badge");
+            if (!existing) {
+              var badge = document.createElement("span");
+              badge.className = "card-changed-badge";
+              badge.title = "Candidate: structure changed (node set / issue count / health score) — not a semantic bug detector";
+              badge.textContent = "structure changed";
+              var header = cards[j].querySelector(".card-header");
+              if (header) header.appendChild(badge);
+            }
+          }
+        }
+        highlightTimer = setTimeout(function () {
+          var changed = grid.querySelectorAll(".card-changed");
+          for (var k = 0; k < changed.length; k++) {
+            changed[k].classList.remove("card-changed");
+            var b = changed[k].querySelector(".card-changed-badge");
+            if (b) b.remove();
+          }
+          highlightTimer = null;
+        }, 5000);
+      }
+
       es.addEventListener("graph", function (ev) {
         try {
-          var graph = JSON.parse(ev.data);
-          if (graph.version === GRAPH_VERSION) {
-            renderGraph(graph);
+          var payload = JSON.parse(ev.data);
+          if (payload.version === GRAPH_VERSION) {
+            var changedIds = payload.changedFeatureIds || [];
+            renderGraph(payload);
             handleRoute();
-            document.getElementById("live-status").textContent = "Live · updated " + graph.scanned_at;
+            applyChangedHighlights(changedIds);
+            setLiveConnected("Live · updated " + payload.scanned_at);
           }
         } catch (_) {
           /* ignore malformed push */
@@ -678,14 +778,16 @@
       es.addEventListener("scan-error", function (ev) {
         try {
           var data = JSON.parse(ev.data);
-          document.getElementById("live-status").textContent =
-            "Scan error (showing last good graph): " + (data.message || "unknown");
+          setLiveConnected("Scan error (showing last good graph): " + (data.message || "unknown"));
         } catch (_) {
-          document.getElementById("live-status").textContent = "Scan error — showing last good graph";
+          setLiveConnected("Scan error — showing last good graph");
         }
       });
       es.onopen = function () {
-        document.getElementById("live-status").textContent = "Live · watching for changes";
+        setLiveConnected("Live · watching for changes");
+      };
+      es.onerror = function () {
+        setLiveDisconnected("Disconnected");
       };
     } catch (_) {
       /* SSE not available — manual reload only */

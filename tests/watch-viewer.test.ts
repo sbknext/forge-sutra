@@ -1,5 +1,5 @@
 /**
- * Story 3.5 — live watch mode tests (SSE + chokidar, no browser).
+ * Story 3.5 / 1.5.1 — live watch mode tests (SSE + chokidar, no browser).
  */
 
 import { describe, it, expect, afterEach } from "vitest";
@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import http from "node:http";
 import { fileURLToPath } from "node:url";
-import { runWatch, WATCH_DEBOUNCE_MS, graphBodyForCompare } from "../src/watch-viewer.js";
+import { runWatch, WATCH_DEBOUNCE_MS, graphBodyForCompare, computeChangedFeatureIds } from "../src/watch-viewer.js";
 import { runScanPipeline } from "../src/watch.js";
 import { GRAPH_VERSION, SUTRA_DIR, type SutraGraph } from "../src/types.js";
 
@@ -177,4 +177,252 @@ describe("sutra watch — determinism parity (Story 3.5)", () => {
 
     expect(graphBodyForCompare(served)).toEqual(graphBodyForCompare(pipeline.graph));
   });
+});
+
+// ── Story 1.5.1 — changedFeatureIds delta (new tests) ─────────────────────────
+
+describe("computeChangedFeatureIds (Story 1.5.1)", () => {
+  function makeGraph(features: SutraGraph["features"]): SutraGraph {
+    return {
+      version: GRAPH_VERSION,
+      repo: "test",
+      scanned_at: new Date().toISOString(),
+      commit: "abc",
+      nodes: [],
+      edges: [],
+      issues: [],
+      features,
+      contracts: [],
+      flows: [],
+    };
+  }
+
+  it("returns empty array when nothing changed", () => {
+    const feat = {
+      id: "f1",
+      label: "F1",
+      node_ids: ["n1", "n2"],
+      issue_count: 0,
+      health: { score: 1.0, band: "green" as const },
+      tested: true,
+    };
+    const prev = makeGraph([feat]);
+    const next = makeGraph([{ ...feat }]);
+    expect(computeChangedFeatureIds(prev, next)).toEqual([]);
+  });
+
+  it("detects new feature", () => {
+    const prev = makeGraph([]);
+    const next = makeGraph([
+      { id: "f1", label: "F1", node_ids: ["n1"], issue_count: 0, health: undefined, tested: false },
+    ]);
+    const changed = computeChangedFeatureIds(prev, next);
+    expect(changed).toContain("f1");
+  });
+
+  it("detects node_ids change", () => {
+    const base = { id: "f1", label: "F1", node_ids: ["n1"], issue_count: 0, health: undefined, tested: false };
+    const prev = makeGraph([base]);
+    const next = makeGraph([{ ...base, node_ids: ["n1", "n2"] }]);
+    expect(computeChangedFeatureIds(prev, next)).toContain("f1");
+  });
+
+  it("detects issue_count change", () => {
+    const base = { id: "f1", label: "F1", node_ids: ["n1"], issue_count: 0, health: undefined, tested: false };
+    const prev = makeGraph([base]);
+    const next = makeGraph([{ ...base, issue_count: 2 }]);
+    expect(computeChangedFeatureIds(prev, next)).toContain("f1");
+  });
+
+  it("detects health score change", () => {
+    const base = {
+      id: "f1", label: "F1", node_ids: ["n1"], issue_count: 0,
+      health: { score: 1.0, band: "green" as const }, tested: true,
+    };
+    const prev = makeGraph([base]);
+    const next = makeGraph([{ ...base, health: { score: 0.5, band: "amber" as const } }]);
+    expect(computeChangedFeatureIds(prev, next)).toContain("f1");
+  });
+
+  it("unchanged features not in result", () => {
+    const f1 = { id: "f1", label: "F1", node_ids: ["n1"], issue_count: 0, health: undefined, tested: false };
+    const f2 = { id: "f2", label: "F2", node_ids: ["n2"], issue_count: 1, health: undefined, tested: false };
+    const prev = makeGraph([f1, f2]);
+    const next = makeGraph([f1, { ...f2, issue_count: 2 }]);
+    const changed = computeChangedFeatureIds(prev, next);
+    expect(changed).not.toContain("f1");
+    expect(changed).toContain("f2");
+  });
+});
+
+describe("WATCH_DEBOUNCE_MS default (Story 1.5.1)", () => {
+  it("default debounce is 500 ms per AC", () => {
+    expect(WATCH_DEBOUNCE_MS).toBe(500);
+  });
+});
+
+describe("sutra watch — SSE retry preamble (Story 1.5.1)", () => {
+  it("SSE /events response includes retry: line", async () => {
+    const { tmp, repoRoot, outCwd } = copyFixture();
+    tmpDir = tmp;
+    handle = await runWatch(repoRoot, outCwd, { port: 0 });
+
+    const sseChunks = await new Promise<string>((resolve, reject) => {
+      const url = new URL("events", handle!.url);
+      const req = http.get(url, (res) => {
+        let buf = "";
+        const t = setTimeout(() => { req.destroy(); resolve(buf); }, 800);
+        res.on("data", (c: Buffer) => { buf += c.toString(); });
+        res.on("error", (err) => { clearTimeout(t); reject(err); });
+      });
+      req.on("error", reject);
+    });
+
+    expect(sseChunks).toMatch(/retry:\s*\d+/);
+  }, 5000);
+});
+
+describe("sutra watch — changedFeatureIds in SSE payload (Story 1.5.1)", () => {
+  it(
+    "initial push has changedFeatureIds array",
+    async () => {
+      const { tmp, repoRoot, outCwd } = copyFixture();
+      tmpDir = tmp;
+      handle = await runWatch(repoRoot, outCwd, { port: 0, debounceMs: 150 });
+
+      const ssePromise = new Promise<Array<{ event: string; data: string }>>((resolve, reject) => {
+        const events: Array<{ event: string; data: string }> = [];
+        const url = new URL("events", handle!.url);
+        const req = http.get(url, (res) => {
+          let buf = "";
+          const t = setTimeout(() => { req.destroy(); resolve(events); }, 3000);
+          res.on("data", (c: Buffer) => {
+            buf += c.toString();
+            const blocks = buf.split("\n\n");
+            buf = blocks.pop() ?? "";
+            for (const block of blocks) {
+              if (!block.trim() || block.startsWith(":")) continue;
+              const lines = block.split("\n");
+              let ev = "message"; let data = "";
+              for (const l of lines) {
+                if (l.startsWith("event: ")) ev = l.slice(7);
+                if (l.startsWith("data: ")) data = l.slice(6);
+              }
+              if (data) events.push({ event: ev, data });
+            }
+          });
+          res.on("error", (err) => { clearTimeout(t); reject(err); });
+        });
+        req.on("error", reject);
+      });
+
+      // trigger a rescan
+      await new Promise((r) => setTimeout(r, 400));
+      fs.writeFileSync(path.join(repoRoot, "lib/delta-test.ts"), "export const x = 1;\n", "utf8");
+
+      const events = await ssePromise;
+      const graphEvents = events.filter((e) => e.event === "graph");
+      expect(graphEvents.length).toBeGreaterThanOrEqual(1);
+
+      const payload = JSON.parse(graphEvents[graphEvents.length - 1]!.data) as SutraGraph & { changedFeatureIds: string[] };
+      expect(Array.isArray(payload.changedFeatureIds)).toBe(true);
+    },
+    15000,
+  );
+});
+
+// ── Story 1.5.1 — end-to-end live-watch integration (Task 6 / DoD) ────────────
+//
+// Single integration test that exercises the full live-watch loop over an
+// ephemeral 127.0.0.1 SSE server + a real temp fixture repo:
+//   (a) connect an SSE client, MODIFY an EXISTING watched file (not just add),
+//       and assert the client receives an updated graph carrying a non-empty
+//       changedFeatureIds for the touched feature within 2 s; and
+//   (b) a burst of rapid writes coalesces into a single re-scan (debounce).
+// Mirrors the readSseEvents() server-spin pattern used above.
+
+describe("sutra watch — live integration (Story 1.5.1)", () => {
+  it(
+    "modifying an existing file pushes an updated graph with changedFeatureIds within 2s",
+    async () => {
+      const { tmp, repoRoot, outCwd } = copyFixture();
+      tmpDir = tmp;
+      // Small debounce so the re-scan + SSE push comfortably land inside 2 s.
+      handle = await runWatch(repoRoot, outCwd, { port: 0, debounceMs: 120 });
+      expect(handle.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/);
+
+      // Connect the SSE client BEFORE the edit so we capture the post-edit push.
+      const target = path.join(repoRoot, "lib/client.ts");
+      const ssePromise = readSseEvents(handle.url, 2000);
+
+      // Let the initial scan settle and the SSE connection establish, then
+      // MODIFY an existing source file that already maps to a feature.
+      await new Promise((r) => setTimeout(r, 300));
+      const editedAt = Date.now();
+      fs.writeFileSync(
+        target,
+        '/** Minimal repo for watch-mode tests. */\n' +
+          'export function ping() {\n' +
+          '  return fetch("/api/ping");\n' +
+          '}\n' +
+          'export function pong() {\n' +
+          '  return fetch("/api/pong");\n' +
+          '}\n',
+        "utf8",
+      );
+
+      const events = await ssePromise;
+      // The graph push must have arrived within the 2 s SSE read window.
+      expect(Date.now() - editedAt).toBeLessThanOrEqual(2000);
+
+      const graphEvents = events.filter((e) => e.event === "graph");
+      expect(graphEvents.length).toBeGreaterThanOrEqual(1);
+
+      const payload = JSON.parse(graphEvents[graphEvents.length - 1]!.data) as
+        SutraGraph & { changedFeatureIds: string[] };
+      expect(payload.version).toBe(GRAPH_VERSION);
+      // The added pong() node lands in the graph.
+      expect(payload.nodes.some((n) => n.name?.includes("pong"))).toBe(true);
+      // The touched feature is flagged as structurally changed.
+      expect(Array.isArray(payload.changedFeatureIds)).toBe(true);
+      expect(payload.changedFeatureIds.length).toBeGreaterThanOrEqual(1);
+      // Every flagged id must correspond to a real feature in the pushed graph.
+      const featureIds = new Set(payload.features.map((f) => f.id));
+      for (const id of payload.changedFeatureIds) {
+        expect(featureIds.has(id)).toBe(true);
+      }
+    },
+    15000,
+  );
+
+  it(
+    "a burst of rapid writes coalesces into a single re-scan (debounce)",
+    async () => {
+      const { tmp, repoRoot, outCwd } = copyFixture();
+      tmpDir = tmp;
+      // Debounce comfortably longer than the burst window so the rapid writes
+      // collapse into one trailing re-scan.
+      handle = await runWatch(repoRoot, outCwd, { port: 0, debounceMs: 400 });
+
+      const target = path.join(repoRoot, "lib/burst.ts");
+      const ssePromise = readSseEvents(handle.url, 2500);
+      await new Promise((r) => setTimeout(r, 300));
+
+      // Fire a tight burst of writes within the debounce window.
+      for (let i = 0; i < 6; i++) {
+        fs.writeFileSync(target, `export const v${i} = ${i};\n`, "utf8");
+      }
+
+      const events = await ssePromise;
+      const burstPushes = events
+        .filter((e) => e.event === "graph")
+        .filter((e) => {
+          const g = JSON.parse(e.data) as SutraGraph;
+          return g.nodes.some((n) => n.file.includes("burst.ts"));
+        });
+      // 6 rapid writes must collapse to one trailing re-scan that includes the file.
+      expect(burstPushes.length).toBe(1);
+    },
+    12000,
+  );
 });

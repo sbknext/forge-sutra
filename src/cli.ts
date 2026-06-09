@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
 import chalk from "chalk";
 import { renderView } from "./view.js";
+import { writeShareArtifact } from "./commands/share.js";
 import {
   SUTRA_DIR,
   GRAPH_FILE,
@@ -36,7 +37,8 @@ import { formatPrComment } from "./pr-comment.js";
 import { writeScaffolds, SCAFFOLD_KINDS } from "./scaffold.js";
 import { runScanPipeline, startWatch, type ScanTimings } from "./watch.js";
 import { runWatch } from "./watch-viewer.js";
-import { reconcileGraphs, buildReconcileOutput, type ReconcileOutput } from "./reconcile.js";
+import { reconcileGraphs, buildReconcileOutput, type ReconcileOutput, type ReconcileSummary } from "./reconcile.js";
+import { loadExternalHosts } from "./external-hosts.js";
 import { linkGraphs, writeLinkFile } from "./link.js";
 import { migrateFile } from "./migrate.js";
 import { exportContracts, exportGraphSchema, exportIssues, writeExport } from "./export.js";
@@ -386,15 +388,21 @@ async function cmdScan(
 
 async function cmdWatch(
   repoPath: string | undefined,
-  opts: { port?: number; outputDir?: string },
+  opts: { port?: number; outputDir?: string; debounce?: number },
 ): Promise<void> {
   const cwd = resolveArtifactRoot(opts.outputDir);
   const repoRoot = path.resolve(repoPath ?? process.cwd());
 
-  const handle = await runWatch(repoRoot, cwd, { port: opts.port });
+  const { WATCH_DEBOUNCE_MS: defaultDebounce } = await import("./watch-viewer.js");
+  const debounceMs = opts.debounce ?? defaultDebounce;
 
-  console.log(chalk.bold(`\nSutra watch → ${repoRoot}\n`));
-  console.log(chalk.cyan(`  Viewer: ${handle.url}`));
+  const handle = await runWatch(repoRoot, cwd, { port: opts.port, debounceMs });
+
+  // AC: startup message — URL, repo path, and debounce window
+  console.log(chalk.bold(`\nSutra watch → ${repoRoot}`));
+  console.log(chalk.cyan(`  Viewer:   ${handle.url}`));
+  console.log(chalk.gray(`  Repo:     ${repoRoot}`));
+  console.log(chalk.gray(`  Debounce: ${debounceMs} ms`));
   console.log(chalk.gray("  Live re-scan on file change · Ctrl+C to stop.\n"));
 
   if (process.platform === "darwin") {
@@ -491,18 +499,24 @@ function cmdLink(
   console.log(chalk.gray(`  Wrote ${out}\n`));
 }
 
-function cmdReconcile(opts: { client: string; server: string; out?: string }): void {
+function cmdReconcile(opts: { client: string; server: string; out?: string; verbose?: boolean }): void {
   let clientGraph: SutraGraph;
   let serverGraph: SutraGraph;
+  let clientRepoRoot: string;
   try {
-    clientGraph = loadGraphFile(path.resolve(opts.client));
-    serverGraph = loadGraphFile(path.resolve(opts.server));
+    const clientPath = path.resolve(opts.client);
+    const serverPath = path.resolve(opts.server);
+    clientGraph = loadGraphFile(clientPath);
+    serverGraph = loadGraphFile(serverPath);
+    // Infer client repo root as the dir two levels above the graph file (.sutra/graph.json)
+    clientRepoRoot = path.dirname(path.dirname(clientPath));
   } catch (err) {
     console.error(chalk.red(`\nError: ${String(err)}\n`));
     process.exit(1);
   }
 
-  const result = reconcileGraphs(clientGraph, serverGraph);
+  const externalHostList = loadExternalHosts(clientRepoRoot);
+  const result = reconcileGraphs(clientGraph, serverGraph, { externalHostList });
   const output = buildReconcileOutput(clientGraph, serverGraph, result);
 
   console.log(chalk.bold(`\nSutra reconcile — candidate cross-repo match\n`));
@@ -511,14 +525,46 @@ function cmdReconcile(opts: { client: string; server: string; out?: string }): v
   console.log(`  Checked: ${result.checked} calls · Matched: ${result.matched}`);
   console.log(chalk.gray("  Static match only — ignores auth, env URLs, proxy rewrites.\n"));
 
-  if (result.issues.length === 0) {
-    console.log(chalk.green("  No cross-repo orphans found (heuristic)."));
+  const { summary } = output;
+  const confirmedBroken = result.issues.filter((i) => i.classification === "confirmed_broken");
+  const suppressed = result.issues.filter((i) => i.classification !== "confirmed_broken");
+
+  if (confirmedBroken.length === 0) {
+    console.log(chalk.green(`  ${chalk.bold("0 confirmed broken")} (no suppression-escaped orphans) · ${suppressed.length} suppressed`));
+    console.log(chalk.gray("  \"confirmed broken\" = no static suppression rule explains the call. Not necessarily a runtime bug.\n"));
   } else {
-    console.log(chalk.bold(`  cross_repo_orphan (${result.issues.length}) — candidate:`));
-    for (const iss of result.issues) {
-      console.log(`    · ${iss.node}: ${iss.message}`);
+    console.log(
+      chalk.yellow(`  ${chalk.bold(`${confirmedBroken.length} confirmed broken`)} — needs human review · ${suppressed.length} suppressed`),
+    );
+    console.log(chalk.gray("  \"confirmed broken\" = no static suppression rule explains the call. Not necessarily a runtime bug.\n"));
+    for (const iss of confirmedBroken) {
+      console.log(`    · ${chalk.yellow(iss.node)}`);
+      console.log(`      ${iss.reason ?? "no suppression rule matched"}`);
     }
+    console.log();
   }
+
+  if (opts.verbose && result.issues.length > 0) {
+    console.log(chalk.bold("  All classified orphans (--verbose):\n"));
+    for (const iss of result.issues) {
+      const cls = iss.classification ?? "confirmed_broken";
+      const clsLabel =
+        cls === "confirmed_broken" ? chalk.yellow("confirmed_broken") :
+        cls === "proxy_suppressed" ? chalk.blue("proxy_suppressed") :
+        cls === "dynamic_suppressed" ? chalk.cyan("dynamic_suppressed (structurally matched only — not validated)") :
+        chalk.gray("external_suppressed");
+      console.log(`    · [${clsLabel}] ${iss.node}`);
+      if (iss.reason) console.log(`        ${chalk.gray(iss.reason)}`);
+    }
+    console.log();
+  }
+
+  console.log(
+    `  Summary: ${chalk.bold(String(summary.confirmed_broken))} confirmed_broken · ` +
+    `${summary.proxy_suppressed} proxy_suppressed · ` +
+    `${summary.dynamic_suppressed} dynamic_suppressed · ` +
+    `${summary.external_suppressed} external_suppressed`,
+  );
 
   if (opts.out) {
     const outPath = path.resolve(opts.out);
@@ -744,6 +790,39 @@ function cmdExport(
   }
 }
 
+// ── share command (Story 1.5.3) ───────────────────────────────────────────────
+
+function cmdShare(
+  repoPath: string | undefined,
+  opts: { out?: string; outputDir?: string },
+): void {
+  const cwd = resolveArtifactRoot(opts.outputDir);
+  const repoRoot = path.resolve(repoPath ?? process.cwd());
+  const commit = getCommit(repoRoot);
+
+  console.log(chalk.bold(`\nSutra share → ${repoRoot}\n`));
+  console.log(chalk.gray("  Scanning (incremental cache)…"));
+
+  const { graph } = runScanPipeline(repoRoot, cwd, commit);
+
+  const result = writeShareArtifact(graph, cwd, { out: opts.out });
+
+  const sizeMb = (result.sizeBytes / 1024 / 1024).toFixed(2);
+
+  console.log(chalk.bold(`\n  Share artifact written → ${result.outPath}`));
+  console.log(chalk.gray(`  Size: ${sizeMb} MB (all viewer assets inlined)`));
+  console.log();
+  console.log(
+    chalk.cyan("  Host this file on any static server") +
+    chalk.gray(" — or give it memory:"),
+  );
+  console.log(chalk.gray("    https://docs.sbknext.com/brain/install"));
+  console.log();
+  console.log(chalk.gray("  Candidate results only — heuristic structural scan, not complete analysis."));
+  console.log(chalk.gray("  Mermaid diagrams require internet access (CDN)."));
+  console.log();
+}
+
 // ── migrate command ───────────────────────────────────────────────────────────
 
 function cmdMigrate(graphPath: string | undefined): void {
@@ -881,7 +960,12 @@ program
   )
   .option("--port <n>", "Viewer port (default 4577)", (v) => parseInt(v, 10))
   .option("--output-dir <dir>", "Write .sutra/ artifacts here (live rescan)")
-  .action(async (repoPath: string | undefined, opts: { port?: number; outputDir?: string }) => {
+  .option(
+    "--debounce <ms>",
+    "Debounce window in ms for coalescing file saves (default 500)",
+    (v) => parseInt(v, 10),
+  )
+  .action(async (repoPath: string | undefined, opts: { port?: number; outputDir?: string; debounce?: number }) => {
     await cmdWatch(repoPath, opts);
   });
 
@@ -923,12 +1007,14 @@ program
   .command("reconcile")
   .description(
     "Match client graph HTTP calls against server graph routes. " +
-    "Cross-repo static match — candidate results for human review.",
+    "Cross-repo static match — candidate results for human review. " +
+    "Each orphan is classified: confirmed_broken / proxy_suppressed / dynamic_suppressed / external_suppressed.",
   )
   .requiredOption("--client <graph>", "Path to client graph.json")
   .requiredOption("--server <graph>", "Path to server graph.json")
   .option("--out <file>", "Write reconcile JSON (e.g. .sutra/reconcile.json)")
-  .action((opts: { client: string; server: string; out?: string }) => {
+  .option("--verbose", "Print all four classes with suppression reasons (default: confirmed_broken only)")
+  .action((opts: { client: string; server: string; out?: string; verbose?: boolean }) => {
     cmdReconcile(opts);
   });
 
@@ -967,6 +1053,26 @@ program
   )
   .action((graphPath: string | undefined) => {
     cmdMigrate(graphPath);
+  });
+
+program
+  .command("share [repoPath]")
+  .description(
+    "Scan repo and produce a self-contained shareable HTML artifact at " +
+    ".sutra/share/view-<repo>-<timestamp>.html. " +
+    "Embeds graph data + viewer SPA inline — no server required to open. " +
+    "Candidate results only — heuristic structural scan.",
+  )
+  .option(
+    "--out <path>",
+    "Override default output path for the share artifact",
+  )
+  .option(
+    "--output-dir <dir>",
+    "Write .sutra/ artifacts here instead of process.cwd()",
+  )
+  .action((repoPath: string | undefined, opts: { out?: string; outputDir?: string }) => {
+    cmdShare(repoPath, opts);
   });
 
 program.parse(process.argv);

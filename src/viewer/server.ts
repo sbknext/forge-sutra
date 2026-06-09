@@ -19,6 +19,7 @@ import {
   type SutraGraph,
 } from "../types.js";
 import { emptyLinkResult } from "../link.js";
+import { handleExplainRoute, createRateLimiter } from "./explain.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = path.resolve(__dirname, "../..");
@@ -185,6 +186,8 @@ export function startViewerServer(
   return new Promise((resolve, reject) => {
     const sseClients = new Set<http.ServerResponse>();
     let boundPort = opts?.port ?? DEFAULT_VIEWER_PORT;
+    // Story 1.5.4 — rate limiter: 10 req/min per running instance (in-memory, not persistent)
+    const explainRateLimiter = createRateLimiter();
 
     const server = http.createServer((req, res) => {
       const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -231,7 +234,8 @@ export function startViewerServer(
           "Cache-Control": "no-store",
           Connection: "keep-alive",
         });
-        res.write(": connected\n\n");
+        // SSE preamble: retry interval so browsers know reconnect cadence
+        res.write(": connected\nretry: 3000\n\n");
         sseClients.add(res);
         req.on("close", () => sseClients.delete(res));
         return;
@@ -250,6 +254,11 @@ export function startViewerServer(
           .replace("__LINK_VERSION__", String(LINK_VERSION));
         res.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-store" });
         res.end(html);
+        return;
+      }
+
+      // Story 1.5.4 — "Explain this feature" POST /explain/:featureId
+      if (handleExplainRoute(req, res, { cwd, rateLimiter: explainRateLimiter })) {
         return;
       }
 
@@ -300,18 +309,27 @@ export function startViewerServer(
       res.end(JSON.stringify({ error: "not found" }));
     });
 
-    const broadcastGraph = (graph: unknown): void => {
-      const payload = `event: graph\ndata: ${JSON.stringify(graph)}\n\n`;
+    const broadcastToClients = (payload: string): void => {
       for (const client of sseClients) {
-        client.write(payload);
+        try {
+          if (client.writableEnded || client.destroyed) {
+            sseClients.delete(client);
+            continue;
+          }
+          client.write(payload);
+        } catch {
+          // Dead/erroring socket — prune so it cannot block future broadcasts or leak.
+          sseClients.delete(client);
+        }
       }
     };
 
+    const broadcastGraph = (graph: unknown): void => {
+      broadcastToClients(`event: graph\ndata: ${JSON.stringify(graph)}\n\n`);
+    };
+
     const broadcastScanError = (message: string): void => {
-      const payload = `event: scan-error\ndata: ${JSON.stringify({ message })}\n\n`;
-      for (const client of sseClients) {
-        client.write(payload);
-      }
+      broadcastToClients(`event: scan-error\ndata: ${JSON.stringify({ message })}\n\n`);
     };
 
     server.on("error", reject);

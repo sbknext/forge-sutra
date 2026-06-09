@@ -120,8 +120,115 @@ Live mode: starts the viewer SPA, runs an initial scan, then re-scans on file ch
 
 ```
 forge-sutra watch
-forge-sutra watch --port 4600
+forge-sutra watch --port 4600          # override default port 4577
+forge-sutra watch --debounce 800       # coalesce saves over an 800 ms window (default 500)
 ```
+
+On startup the terminal prints the viewer URL, the repo path, and the active debounce window, e.g.:
+
+```
+Sutra watch → /path/to/repo
+  Viewer:   http://127.0.0.1:4577/
+  Repo:     /path/to/repo
+  Debounce: 500 ms
+  Live re-scan on file change · Ctrl+C to stop.
+```
+
+**Flags:**
+- `--port <n>` — viewer port (default `4577`). The server always binds `127.0.0.1` only — never `0.0.0.0` / all interfaces.
+- `--debounce <ms>` — file-save coalescing window (default `500`). A burst of saves inside one window triggers exactly one re-scan.
+- `--output-dir <dir>` — write `.sutra/` artifacts here instead of `cwd`.
+
+**How live push works (SSE):**
+- The viewer opens an `EventSource` to `/events`. After each debounced re-scan the server broadcasts a `graph` event carrying the full graph plus a `changedFeatureIds` array.
+- Re-scans use the incremental content-hash cache (`.sutra/cache/`); only changed files are re-parsed. The cache line `N cached · M parsed` is printed on each run.
+- **Live / Disconnected indicator:** the viewer header shows a green **Live** badge while the SSE connection is open and a grey **Disconnected** badge when it drops.
+- **Auto-reconnect:** the server emits a `retry: 3000` preamble, so a browser tab reconnects ~3 s after the server restarts — no manual reload needed.
+- **Changed-card highlight (candidate UI):** feature cards whose **node set, issue count, or health score** changed since the last push get a transient yellow border + a **`structure changed`** badge that auto-clears after 5 s. This reflects *graph-structural* change only — it is **not** a semantic bug detector and never claims a bug was introduced.
+
+**`watch` vs `scan --watch`:** both re-scan on file change and share one code path (`runScanPipeline`). The distinction:
+- `forge-sutra scan --watch` is **CLI-only** — it re-scans and prints a delta summary to the terminal, writes `.sutra/graph.json` / `graph.prev.json` / `diff.json`, but starts **no server**. Use it for terminal/CI-adjacent loops.
+- `forge-sutra watch` starts the **viewer SPA + SSE server** and live-pushes the graph to the browser. Use it for the interactive "watch the graph update as you type" experience.
+
+**Platform notes:** chokidar drives the watcher (macOS + Linux verified). SSE requires a browser `EventSource` (all evergreen browsers); SSE on older Node-bundled Windows runtimes is out of scope for this command.
+
+> **Demo GIF — placeholder.** A 30-second screen capture of the graph updating live as files are saved belongs here (the Show HN anchor clip). Recording it is a manual/binary step left to the maintainer; drop the GIF at `docs/watch-demo.gif` and link it from this section.
+
+### "Explain this feature" (AI — live viewer only)
+
+Click any feature card in the drill-down panel to open it. An **Explain (AI)** button appears at the bottom of every drill-down. Clicking it calls `POST /explain/:featureId` on the viewer backend, which builds a structural prompt from the feature's node list, issue set, and health score, then streams a candid plain-English explanation back to the panel token-by-token.
+
+**Honesty rules (mandatory):**
+
+Every explanation is preceded by the non-removable label:
+
+> AI explanation — derived from code structure, not from documentation. Candidate — not a complete description.
+
+The system prompt instructs the model to say "appears to," "structurally suggests," or "candidate" when inferring intent. The model is told never to claim runtime correctness, test status, or security properties.
+
+After the explanation, a CTA appears: **Save this explanation to Brain memory — `brain memory_save`.**
+
+**Setup:**
+
+```bash
+# OpenAI (default)
+export SUTRA_AI_API_KEY=sk-...
+forge-sutra watch
+
+# Anthropic
+export SUTRA_AI_API_KEY=sk-ant-...
+export SUTRA_AI_PROVIDER=anthropic
+forge-sutra watch
+
+# Model override (optional; default: gpt-4o-mini / claude-3-haiku-20240307)
+export SUTRA_AI_MODEL=gpt-4o
+```
+
+**Environment variables:**
+
+| Variable | Default | Description |
+|---|---|---|
+| `SUTRA_AI_API_KEY` | (required) | API key for the AI provider. Affects both `--ai` scan flag and the live Explain panel. |
+| `SUTRA_AI_PROVIDER` | `openai` | Provider: `openai` or `anthropic`. AI — candidate enum, extend as needed. |
+| `SUTRA_AI_MODEL` | `gpt-4o-mini` / `claude-3-haiku-20240307` | Model to use for explanations. |
+
+**Rate limit:** 10 Explain calls per minute per running viewer instance (in-memory, not persistent across restarts). Candidate threshold — adjust based on provider costs. Excess calls return a clear "Rate limit — try again in N seconds" message.
+
+**Static mode:** The Explain button is hidden in `forge-sutra share` artifacts (`__SUTRA_STATIC__`). AI calls require a live viewer server. The panel shows "AI explanation available in the live viewer (`forge-sutra watch`)." instead.
+
+**Missing key:** If `SUTRA_AI_API_KEY` is not set, the Explain button is shown but clicking it returns the message "AI explanations require SUTRA_AI_API_KEY — see README" rather than a raw error.
+
+### `forge-sutra share [repoPath]`
+
+Scan a repo and produce a **self-contained HTML artifact** — one file, no server required, all viewer assets inlined.
+
+```
+forge-sutra share
+forge-sutra share ./my-repo
+forge-sutra share --out /tmp/my-graph.html
+```
+
+Output: `.sutra/share/view-<repo>-<YYYYMMDD-HHMMSS>.html`
+
+- **Single file.** CSS, JS, and graph data all inlined. Open in any browser without installing anything.
+- **Snapshot label.** Every artifact displays a `Snapshot taken: <ISO date>` header so recipients know they are looking at a point-in-time export, not a live feed.
+- **Static mode.** SSE live-push, "Reload graph", and "Export view" are suppressed (`window.__SUTRA_STATIC__ = true`). The "Share this view" button becomes **"Copy local path"** — copies the local file path + URL hash (useful for passing to a teammate).
+- **No API keys.** Scan runs in the same masking context as the normal viewer; raw secrets are never emitted to the graph.
+- **AI labels survive.** If the scan was run with `--ai`, `ai_name` and `ai_summary` fields appear in the artifact with their **AI** badge.
+- **Mermaid requires internet.** Feature-graph diagrams load Mermaid from CDN — the only external dependency.
+
+**CTA printed after write:**
+
+```
+Host this file on any static server (GitHub Pages, Cloudflare Pages, Netlify)
+— or give it memory: https://docs.sbknext.com/brain/install
+```
+
+**Typical size:** ~200–800 KB depending on graph size (candidate estimate — varies by repo).
+
+**Flags:**
+- `--out <path>` — override the default output location.
+- `--output-dir <dir>` — write `.sutra/` artifacts here instead of `cwd`.
 
 ### Search, filter & share (viewer)
 
@@ -153,13 +260,30 @@ Stubs may not compile. Not run in CI. Not auto-test generation.
 
 ### `forge-sutra reconcile --client <graph> --server <graph>`
 
-Match client graph HTTP calls against server graph routes. Emits `cross_repo_orphan` (warn) for client calls with no matching server route.
+Match client graph HTTP calls against server graph routes. Each `cross_repo_orphan` is classified into one of four categories so false positives from proxies, dynamic routes, and external hosts don't flood the output.
 
 ```
 forge-sutra reconcile --client .sutra/all/echo-ai.json --server .sutra/all/brain-api.json
+
+# Print all four classes with suppression reasons:
+forge-sutra reconcile --client .sutra/all/echo-ai.json --server .sutra/all/brain-api.json --verbose
+
+# Write classified JSON:
+forge-sutra reconcile --client ... --server ... --out .sutra/reconcile.json
 ```
 
-Cross-repo static match only — ignores auth, env-specific URLs, proxy rewrites, runtime 404s. Results are **candidates for human review**. Known proxy paths (e.g. echo-ai → brain-api via `next.config` rewrites) may still require manual verification.
+**Classification semantics** (honest labels — this is sutra's core principle):
+
+| Class | Meaning |
+|---|---|
+| `confirmed_broken` | No static suppression rule explains the call. **Does NOT mean "definitely a bug"** — it means no proxy, dynamic-route, or external-host pattern matched. Human review needed. |
+| `proxy_suppressed` | Path matches a `PROXY /prefix` node in the client graph (from `next.config` rewrite detection). Candidate only — dynamic expressions in `next.config` may be missed. |
+| `dynamic_suppressed` | Path structurally matches a server route template (`[param]` or `:param`). **Structurally matched only — auth, method, and params are NOT validated.** |
+| `external_suppressed` | Target host matches the external-host allowlist (`.sutra/external-hosts.json` or built-in defaults: Telegram, Stripe). |
+
+All orphans appear in the JSON output — none are silently dropped. The viewer's "Cross-repo" panel shows `confirmed_broken` only by default; suppressed entries are accessible via "Show suppressed (N)".
+
+Cross-repo static match only — ignores auth, env-specific URLs, runtime 404s. Results are **candidates for human review**.
 
 ### `forge-sutra migrate [graphPath]`
 

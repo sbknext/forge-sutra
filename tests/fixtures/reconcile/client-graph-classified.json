@@ -1,0 +1,114 @@
+{
+  "version": 6,
+  "repo": "echo-ai",
+  "scanned_at": "2026-06-01T00:00:00.000Z",
+  "commit": "abc1234",
+  "nodes": [
+    {
+      "id": "lib/api.ts#fetchUsers",
+      "type": "endpoint",
+      "name": "fetchUsers",
+      "file": "lib/api.ts",
+      "line": 5,
+      "data_shape": null,
+      "feature": "users",
+      "language": "ts"
+    },
+    {
+      "id": "lib/api.ts#fetchProxy",
+      "type": "endpoint",
+      "name": "fetchProxy",
+      "file": "lib/api.ts",
+      "line": 10,
+      "data_shape": null,
+      "feature": "proxy",
+      "language": "ts"
+    },
+    {
+      "id": "lib/api.ts#fetchDynamic",
+      "type": "endpoint",
+      "name": "fetchDynamic",
+      "file": "lib/api.ts",
+      "line": 15,
+      "data_shape": null,
+      "feature": "items",
+      "language": "ts"
+    },
+    {
+      "id": "lib/api.ts#patchItem",
+      "type": "endpoint",
+      "name": "patchItem",
+      "file": "lib/api.ts",
+      "line": 17,
+      "data_shape": null,
+      "feature": "items",
+      "language": "ts"
+    },
+    {
+      "id": "lib/api.ts#fetchExternal",
+      "type": "endpoint",
+      "name": "fetchExternal",
+      "file": "lib/api.ts",
+      "line": 20,
+      "data_shape": null,
+      "feature": "telegram",
+      "language": "ts"
+    },
+    {
+      "id": "lib/api.ts#fetchBroken",
+      "type": "endpoint",
+      "name": "fetchBroken",
+      "file": "lib/api.ts",
+      "line": 25,
+      "data_shape": null,
+      "feature": "broken",
+      "language": "ts"
+    },
+    {
+      "id": ".sutra/proxy-rewrite",
+      "type": "route",
+      "name": "PROXY /api/brain",
+      "file": "next.config.js",
+      "line": 3,
+      "data_shape": null,
+      "feature": "proxy",
+      "language": "ts"
+    }
+  ],
+  "edges": [
+    {
+      "from": "lib/api.ts#fetchUsers",
+      "to": "http:GET /api/users",
+      "kind": "http"
+    },
+    {
+      "from": "lib/api.ts#fetchProxy",
+      "to": "http:GET /api/brain/status",
+      "kind": "http"
+    },
+    {
+      "from": "lib/api.ts#fetchDynamic",
+      "to": "http:GET /api/items/42",
+      "kind": "http"
+    },
+    {
+      "from": "lib/api.ts#patchItem",
+      "to": "http:PATCH /api/items/77",
+      "kind": "http"
+    },
+    {
+      "from": "lib/api.ts#fetchExternal",
+      "to": "http:POST /sendMessage|api.telegram.org",
+      "kind": "http"
+    },
+    {
+      "from": "lib/api.ts#fetchBroken",
+      "to": "http:DELETE /api/nonexistent",
+      "kind": "http"
+    }
+  ],
+  "issues": [],
+  "features": [],
+  "contracts": [],
+  "flows": []
+}

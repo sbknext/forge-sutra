@@ -4,12 +4,12 @@
   "repos": [
     {
       "name": "client-app",
-      "path": "/Users/sam/Documents/saas/brain/sutra/tests/fixtures/ecosystem",
+      "path": "<repo>/tests/fixtures/ecosystem",
       "commit": "client1"
     },
     {
       "name": "server-api",
-      "path": "/Users/sam/Documents/saas/brain/sutra/tests/fixtures/ecosystem/repo-b",
+      "path": "<repo>/tests/fixtures/ecosystem/repo-b",
       "commit": "server1"
     }
   ],

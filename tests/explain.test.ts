@@ -176,7 +176,8 @@ describe("buildExplainPrompt (Story 1.5.4)", () => {
       makeNode(`src/n${i}.ts`, `fn${i}`, `src/n${i}.ts`),
     );
     const prompt = buildExplainPrompt(feature, nodes, []);
-    const lines = prompt.split("\n").filter((l) => l.trim().startsWith("function:"));
+    // makeNode defaults to type "module"; prompt formats nodes as "  module: <name>"
+    const lines = prompt.split("\n").filter((l) => l.trim().startsWith("module:"));
     expect(lines.length).toBeLessThanOrEqual(20);
   });
 

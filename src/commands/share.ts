@@ -255,7 +255,15 @@ export function writeShareArtifact(
 
   // Build HTML then substitute the placeholder with the real path.
   let html = buildShareHtml(graph);
-  const safePath = outPath.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  // Escape the path for safe embedding inside a JS string literal inside a <script> block.
+  // Order matters: backslash first, then the remaining special chars.
+  const safePath = outPath
+    .replace(/\\/g, "\\\\")   // backslash
+    .replace(/"/g, '\\"')      // double-quote (string delimiter)
+    .replace(/\r/g, "\\r")     // carriage return (line terminator → breaks string literal)
+    .replace(/\n/g, "\\n")     // newline (line terminator → breaks string literal)
+    .replace(/<!--/g, "<\\!--") // HTML comment open (can confuse script parsers)
+    .replace(/<\/script/gi, "<\\/script"); // </script would close the enclosing <script> tag
   html = html.replace("__SUTRA_SHARE_PATH_PLACEHOLDER__", safePath);
 
   fs.writeFileSync(outPath, html, "utf8");

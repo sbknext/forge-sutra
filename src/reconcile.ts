@@ -203,16 +203,19 @@ function matchesProxyPrefix(callPath: string, proxyPrefixes: string[]): string |
 }
 
 /**
- * Check if `callPath` structurally matches any server route template (path only).
- * Returns the matched template, or null.
- * Note: structural path match only — auth, method, and params are NOT validated.
+ * Check if `callPath` structurally matches any server route template with the same method.
+ * Returns the matched template string, or null.
+ * Note: structural path + method match only — auth and params are NOT validated.
  * Known limitation: may over-suppress if the template is very broad (e.g. /api/[id]).
  */
 function matchesDynamicRoute(
+  callMethod: string,
   callPath: string,
   serverRoutes: Array<{ method: string; path: string }>,
 ): string | null {
   for (const route of serverRoutes) {
+    // Method must match — different verbs on the same path template are distinct routes.
+    if (route.method !== callMethod) continue;
     // Look for template matches where at least one segment is dynamic.
     const defSegs = segments(normalisePath(route.path));
     const cliSegs = segments(normalisePath(callPath));
@@ -275,8 +278,8 @@ function classifyOrphan(
     };
   }
 
-  // 3. Dynamic-route check (path only — method not checked here)
-  const dynMatch = matchesDynamicRoute(callPath, serverRoutes);
+  // 3. Dynamic-route check (method + path — must match both to avoid over-suppression)
+  const dynMatch = matchesDynamicRoute(callMethod, callPath, serverRoutes);
   if (dynMatch !== null) {
     return {
       classification: "dynamic_suppressed",

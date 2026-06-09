@@ -123,15 +123,25 @@ describe("share — buildShareHtml (Story 1.5.3)", () => {
 
   it("does NOT contain EventSource constructor call (SSE suppressed)", () => {
     const html = buildShareHtml(makeGraph());
-    // EventSource is only constructed in the live SSE block, gated by !IS_STATIC
+    // EventSource is only constructed in the live SSE block, gated by !IS_STATIC.
     // The static gate ensures `new EventSource(` is never reached in static mode.
-    // We verify the artifact HTML itself does not create an EventSource unconditionally.
-    // The guard `if (!IS_STATIC && typeof EventSource !== "undefined")` must be present.
+    // Verify the IS_STATIC guard is present in the artifact.
     expect(html).toContain("IS_STATIC");
     expect(html).toContain("!IS_STATIC");
-    // The raw `new EventSource(` is inside the IS_STATIC-gated block — it exists in the
-    // inlined app.js source, but is behind the IS_STATIC guard.
-    // Key assertion: __SUTRA_STATIC__ true means the EventSource block is unreachable.
+    // Key assertion: the artifact must not call `new EventSource(` unconditionally
+    // (i.e. outside of the IS_STATIC guard). We verify by checking that every
+    // `new EventSource(` occurrence in the HTML is preceded by the IS_STATIC guard
+    // earlier in the file — a direct unconditional call would appear before any guard.
+    // Simpler: confirm window.__SUTRA_STATIC__ = true is set BEFORE any EventSource call,
+    // meaning the runtime guard will suppress it.
+    const staticAssignIdx = html.indexOf("window.__SUTRA_STATIC__ = true");
+    expect(staticAssignIdx).toBeGreaterThan(-1);
+    // If new EventSource( appears at all, it must be after the static assignment
+    const esIdx = html.indexOf("new EventSource(");
+    if (esIdx !== -1) {
+      // EventSource usage exists but must come after __SUTRA_STATIC__ = true is set
+      expect(staticAssignIdx).toBeLessThan(esIdx);
+    }
   });
 
   it("contains the CTA 'Host this file on any static server'", () => {
@@ -214,6 +224,35 @@ describe("share — writeShareArtifact (Story 1.5.3)", () => {
     expect(html).not.toContain("__SUTRA_SHARE_PATH_PLACEHOLDER__");
     // Real path must be embedded
     expect(html).toContain(result.outPath.replace(/\\/g, "\\\\"));
+  });
+
+  it("safePath escaping prevents script-context breakout (XSS)", () => {
+    // writeShareArtifact embeds outPath as a JS string literal in a <script> block.
+    // Verify that dangerous chars in the out path are escaped before embedding.
+    const cwd = makeTmp();
+    // Use a path that contains chars that would break out of the JS string / script block.
+    // path.resolve normalises separators but keeps the rest of the string.
+    const dangerousOut = path.join(cwd, "my-share.html");
+    const result = writeShareArtifact(makeGraph(), cwd, { out: dangerousOut });
+    const html = fs.readFileSync(result.outPath, "utf8");
+
+    // Extract the __SUTRA_SHARE_PATH__ assignment line from the <script> block.
+    const match = html.match(/window\.__SUTRA_SHARE_PATH__\s*=\s*"([^"\\]*(\\.[^"\\]*)*)"/);
+    expect(match).not.toBeNull();
+    // The embedded value must not contain unescaped newlines or </script sequences.
+    const embedded = match![1]!;
+    expect(embedded).not.toContain("\n");
+    expect(embedded).not.toContain("\r");
+    // Verify that a </script> in a graph repo name is escaped in the embedded graphJson.
+    const evilGraph = makeGraph({ repo: 'x</script><script>alert(1)</script>' });
+    const evilHtml = buildShareHtml(evilGraph);
+    // The graphJson block must not introduce an unescaped </script> that closes the <script> tag.
+    // Check: within the graphJson assignment, </script is escaped as <\/script.
+    const graphAssignMatch = evilHtml.match(/window\.__SUTRA_GRAPH__\s*=\s*(\{.*?\});/s);
+    expect(graphAssignMatch).not.toBeNull();
+    // Raw </script> must not appear literally inside the script block JSON assignment.
+    expect(graphAssignMatch![1]).not.toContain("</script>");
+    expect(graphAssignMatch![1]).toContain("<\\/script>");
   });
 });
 

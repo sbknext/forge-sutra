@@ -310,7 +310,8 @@ export async function streamExplanation(
     "Content-Type": "text/plain; charset=utf-8",
     "Transfer-Encoding": "chunked",
     "Cache-Control": "no-store",
-    // CORS for localhost viewer (same-origin in practice, but explicit)
+    // Custom response marker — no Access-Control-Allow-Origin header is set;
+    // the endpoint is served from the same origin as the viewer (no cross-origin access).
     "X-Sutra-Explain": "candidate",
   });
 

@@ -9,3 +9,4 @@ dist/
 # Internal governance docs — Cursor context only, NEVER publish (public repo)
 AGENT_PLAYBOOK.md
 MISTAKES_LEDGER.md
+.forge-security/

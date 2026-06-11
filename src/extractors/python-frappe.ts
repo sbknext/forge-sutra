@@ -92,6 +92,25 @@ function modulePathFromRel(rel: string): string {
   return noExt.split("/").join(".");
 }
 
+/**
+ * Derive the app-root module path by stripping the bench `apps/<appname>/`
+ * prefix when present.
+ *
+ * Examples:
+ *   `apps/inv/inv/api/widget.py` → `inv.api.widget`
+ *   `myapp/api/widget.py`        → `myapp.api.widget`  (unchanged — no bench prefix)
+ *
+ * This is the path that Frappe apps use in their imports:
+ *   `from inv.api.widget import fn`
+ */
+function appModulePath(rel: string): string {
+  const full = modulePathFromRel(rel);
+  // Bench layout: apps.<appname>.<rest>  →  strip `apps.<appname>.`
+  const benchMatch = full.match(/^apps\.[^.]+\.(.+)$/);
+  if (benchMatch) return benchMatch[1]!;
+  return full;
+}
+
 /** `myapp.events.handlers.on_submit` → { rel: myapp/events/handlers.py, fn: on_submit } */
 function dottedToFileFn(dotted: string): { rel: string; fn: string } {
   const parts = dotted.split(".");
@@ -115,11 +134,41 @@ function getPyParser(): Parser {
   return pyParser;
 }
 
+/**
+ * Chase re-exports from `__init__.py` files.
+ *
+ * Maps `pkg.symbol` → `pkg.submodule.symbol` so that:
+ *   from myapp.handlers import process_return
+ * resolves to `myapp.handlers.return_handler.process_return` when
+ * `myapp/handlers/__init__.py` contains `from .return_handler import process_return`.
+ *
+ * Built during pass 1 when a `__init__.py` is encountered. Only one level of
+ * indirection is followed (enough for the Frappe re-export pattern).
+ */
+function buildReExportMap(
+  initFiles: Array<{ appModPath: string; source: string }>,
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const { appModPath, source } of initFiles) {
+    // Pass `pkg.__init__` as currentModPath so that relative imports resolve
+    // within the package: `.sibling` in `myapp.handlers.__init__` correctly
+    // gives `myapp.handlers.sibling` (1 dot drops `__init__` → package stays).
+    const currentModPath = `${appModPath}.__init__`;
+    const imports = parseModuleImports(source, currentModPath);
+    for (const [alias, resolved] of imports.modules) {
+      // Register as `pkg.alias → resolved` (= `pkg.submod.symbol`)
+      map.set(`${appModPath}.${alias}`, resolved);
+    }
+  }
+  return map;
+}
+
 function resolveSimpleCall(
   modPath: string,
   name: string,
   imports: PyImportMap,
   fnByDotted: Map<string, string>,
+  reExportMap?: Map<string, string>,
 ): string | null {
   const local = `${modPath}.${name}`;
   const localId = fnByDotted.get(local);
@@ -128,6 +177,15 @@ function resolveSimpleCall(
   if (imp) {
     const impId = fnByDotted.get(imp);
     if (impId) return impId;
+    // imp resolved to e.g. `myapp.handlers.process_return` which is a re-export
+    // alias — chase through re-export map to the ultimate definition
+    if (reExportMap) {
+      const ultimate = reExportMap.get(imp);
+      if (ultimate) {
+        const ultimateId = fnByDotted.get(ultimate);
+        if (ultimateId) return ultimateId;
+      }
+    }
   }
   return fnByDotted.get(name) ?? null;
 }
@@ -160,6 +218,7 @@ function emitCallSiteEdges(
   imports: PyImportMap,
   fnByDotted: Map<string, string>,
   edges: SutraEdge[],
+  reExportMap?: Map<string, string>,
 ): void {
   if (site.frappeMethod) {
     const targetId = fnByDotted.get(site.frappeMethod);
@@ -192,7 +251,7 @@ function emitCallSiteEdges(
   }
 
   if (site.simpleName) {
-    const to = resolveSimpleCall(modPath, site.simpleName, imports, fnByDotted);
+    const to = resolveSimpleCall(modPath, site.simpleName, imports, fnByDotted, reExportMap);
     if (to && to !== fromId) {
       edges.push({ from: fromId, to, kind: "calls", provenance: "ast-exact" });
     }
@@ -226,12 +285,14 @@ function extractBodyEdgesForFile(
   source: string,
   rel: string,
   modPath: string,
+  appModPath: string,
   fnByDotted: Map<string, string>,
   nodeIdBySymbol: Map<string, string>,
   edges: SutraEdge[],
+  reExportMap?: Map<string, string>,
 ): void {
   const tree = getPyParser().parse(source);
-  const imports = parseModuleImports(source);
+  const imports = parseModuleImports(source, appModPath);
 
   function processFunctionDef(
     fnNode: Parser.SyntaxNode,
@@ -243,7 +304,9 @@ function extractBodyEdgesForFile(
     const fromId = nodeIdBySymbol.get(sym) ?? makeNodeId(rel, sym);
     const body = fnNode.childForFieldName("body");
     for (const site of extractCallsInBody(body, source)) {
-      emitCallSiteEdges(fromId, site, modPath, className, imports, fnByDotted, edges);
+      // Use appModPath for resolution: fnByDotted is keyed by app-root paths,
+      // matching how Frappe imports are written in bench layouts.
+      emitCallSiteEdges(fromId, site, appModPath, className, imports, fnByDotted, edges, reExportMap);
     }
   }
 
@@ -285,6 +348,11 @@ export class PythonFrappeExtractor implements Extractor {
     const fnByDotted = new Map<string, string>();
     /** module-relative symbol → node id */
     const nodeIdBySymbol = new Map<string, string>();
+    /**
+     * Accumulates __init__.py files for re-export map construction after pass 1.
+     * Each entry: appModPath (= package dotted path) + source text.
+     */
+    const initFileBuf: Array<{ appModPath: string; source: string }> = [];
 
     for (const absPath of pyFiles) {
       const rel = relPosix(absRoot, absPath);
@@ -298,7 +366,21 @@ export class PythonFrappeExtractor implements Extractor {
       }
 
       const modPath = modulePathFromRel(rel);
+      // App-root module path: strips `apps/<appname>/` prefix for bench layouts
+      // so resolver keys match how Frappe imports are written (`from inv.api.x import fn`)
+      const appModPath = appModulePath(rel);
       const feat = featureFor(rel);
+
+      // Collect __init__.py files to build the re-export map after pass 1.
+      // appModPath for __init__.py includes trailing `.__init__` — strip it to
+      // get the package path (e.g. `myapp.handlers.__init__` → `myapp.handlers`).
+      if (path.basename(absPath) === "__init__.py") {
+        const pkgModPath = appModPath.endsWith(".__init__")
+          ? appModPath.slice(0, -".__init__".length)
+          : appModPath;
+        initFileBuf.push({ appModPath: pkgModPath, source });
+      }
+
       const ast = parsePythonModule(source);
 
       const moduleId = makeNodeId(rel);
@@ -317,8 +399,13 @@ export class PythonFrappeExtractor implements Extractor {
       for (const fn of ast.functions) {
         const sym = qualifiedSymbol(modPath, fn.name);
         const nodeId = makeNodeId(rel, sym);
+        // Key by full repo-relative path (stable across layouts)
         const dotted = `${modPath}.${fn.name}`;
         fnByDotted.set(dotted, nodeId);
+        // Also key by app-root path (matches bench imports like `from inv.api.x import fn`)
+        if (appModPath !== modPath) {
+          fnByDotted.set(`${appModPath}.${fn.name}`, nodeId);
+        }
         nodeIdBySymbol.set(qualifiedSymbol(modPath, fn.name), nodeId);
 
         if (hasWhitelistDecorator(fn.decorators)) {
@@ -355,6 +442,9 @@ export class PythonFrappeExtractor implements Extractor {
         const classSym = cls.name;
         const classId = makeNodeId(rel, classSym);
         fnByDotted.set(`${modPath}.${cls.name}`, classId);
+        if (appModPath !== modPath) {
+          fnByDotted.set(`${appModPath}.${cls.name}`, classId);
+        }
         nodes.push(
           pyNode({
             id: classId,
@@ -373,6 +463,9 @@ export class PythonFrappeExtractor implements Extractor {
           const methodId = makeNodeId(rel, methodSym);
           const dotted = `${modPath}.${cls.name}.${method.name}`;
           fnByDotted.set(dotted, methodId);
+          if (appModPath !== modPath) {
+            fnByDotted.set(`${appModPath}.${cls.name}.${method.name}`, methodId);
+          }
           nodeIdBySymbol.set(methodSym, methodId);
           const nodeType: NodeType = isControllerHook(method.name) ? "handler" : "function";
           nodes.push(
@@ -391,6 +484,11 @@ export class PythonFrappeExtractor implements Extractor {
       }
     }
 
+    // Build re-export map from collected __init__.py files.
+    // Maps `pkg.symbol` → `pkg.submodule.symbol` so that callers who import
+    // a symbol via a package's __init__ re-export reach the ultimate definition.
+    const reExportMap = buildReExportMap(initFileBuf);
+
     for (const absPath of pyFiles) {
       const rel = relPosix(absRoot, absPath);
       if (rel.endsWith("hooks.py")) continue;
@@ -401,14 +499,17 @@ export class PythonFrappeExtractor implements Extractor {
         continue;
       }
       const modPath = modulePathFromRel(rel);
+      const appModPath = appModulePath(rel);
       extractBodyEdgesForFile(
         absPath,
         source,
         rel,
         modPath,
+        appModPath,
         fnByDotted,
         nodeIdBySymbol,
         edges,
+        reExportMap,
       );
     }
 

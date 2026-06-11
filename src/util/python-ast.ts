@@ -192,8 +192,42 @@ export interface PyImportMap {
   modules: Map<string, string>;
 }
 
-/** Top-level import aliases for call resolution (static only). */
-export function parseModuleImports(source: string): PyImportMap {
+/**
+ * Resolve a relative import module specifier (`.sibling`, `..base.sub`) against
+ * the current module's dotted path.
+ *
+ * e.g. currentModPath=`inv.handler.order`, rel=`.sibling`
+ *   → dots=1 → package=`inv.handler` → `inv.handler.sibling`
+ *
+ * e.g. currentModPath=`inv.handler.order`, rel=`..utils`
+ *   → dots=2 → package=`inv` → `inv.utils`
+ */
+export function resolveRelativeImport(
+  relSpecifier: string,
+  currentModPath: string,
+): string {
+  const dotsMatch = relSpecifier.match(/^(\.+)/);
+  if (!dotsMatch) return relSpecifier;
+  const dots = dotsMatch[1]!.length;
+  const rest = relSpecifier.slice(dots); // may be "" for `from . import x`
+
+  const parts = currentModPath.split(".");
+  // drop `dots` levels: 1 dot = same package (drop current module name),
+  // 2 dots = parent package, etc.
+  const parentParts = parts.slice(0, Math.max(0, parts.length - dots));
+  if (rest) {
+    return [...parentParts, rest].join(".");
+  }
+  return parentParts.join(".") || currentModPath;
+}
+
+/** Top-level import aliases for call resolution (static only).
+ *
+ * @param source Python source text
+ * @param currentModPath Optional dotted path of the current module (e.g. `inv.handler.order`).
+ *   Required for relative import resolution (`from .sibling import fn`).
+ */
+export function parseModuleImports(source: string, currentModPath?: string): PyImportMap {
   const modules = new Map<string, string>();
   const tree = getParser().parse(source);
   for (const child of tree.rootNode.namedChildren) {
@@ -212,9 +246,19 @@ export function parseModuleImports(source: string): PyImportMap {
       }
     }
     if (child.type === "import_from_statement") {
-      const moduleName = child.childForFieldName("module_name")?.text;
-      if (!moduleName) continue;
       const moduleNode = child.childForFieldName("module_name");
+      const rawModuleName = moduleNode?.text;
+      if (!rawModuleName) continue;
+
+      // Resolve relative imports when currentModPath is available
+      let moduleName = rawModuleName;
+      if (
+        currentModPath &&
+        moduleNode?.type === "relative_import"
+      ) {
+        moduleName = resolveRelativeImport(rawModuleName, currentModPath);
+      }
+
       for (const nameNode of child.namedChildren) {
         if (nameNode === moduleNode) continue;
         if (nameNode.type === "dotted_name" || nameNode.type === "aliased_import") {

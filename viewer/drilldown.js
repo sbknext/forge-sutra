@@ -265,9 +265,16 @@
   function buildFlows(graph, feature) {
     var flows = featureFlows(graph, feature);
     if (!flows.length) {
+      // AC3 (Story 8.6): explicit empty state referencing FLOW_KINDS so the user understands
+      // why paths are absent — not a broken graph, just no renders/calls/http edges from an
+      // entry point into this feature (imports-only or pre-8.1 extractor bench).
       return (
         '<section class="drill-section"><h3>Traced request paths</h3>' +
-        '<p class="meta">No traced paths in this graph for this feature (static flow tracing may be absent or entry nodes are outside the feature subgraph).</p></section>'
+        '<p class="meta">No traced paths for this feature &mdash; flow tracing follows ' +
+        '<code>renders</code>, <code>calls</code>, and <code>http</code> edges only ' +
+        '(FLOW_KINDS). Endpoints are resolved but no outgoing edges were found from an ' +
+        'entry node into this feature subgraph. Re-scan after extractor fixes or add a ' +
+        '<code>calls</code> edge from a route handler to confirm paths.</p></section>'
       );
     }
     var html =

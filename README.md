@@ -114,6 +114,8 @@ forge-sutra viewer --port 4600
 
 The static `forge-sutra view` command remains the offline/no-server fallback.
 
+**Absent vs empty `link.json` (Story 8.6):** The viewer server always returns HTTP 200 for `GET /link.json`. When no `.sutra/link.json` exists on disk, the server synthesises a stub `{ repos: [<current>], edges: [] }` rather than returning 404. The Ecosystem tab therefore stays enabled and clickable in all cases — it shows a "single-repo scan" message when `repos.length < 2` or `edges.length === 0`, and the full cross-repo map only when a real `sutra link` run has produced multi-repo data. The `/events` endpoint returns 204 (no content) when `forge-sutra viewer` is used without watch mode, and `/favicon.ico` is silently acknowledged with 204 — neither generates a browser console error.
+
 ### `forge-sutra watch [repoPath]`
 
 Live mode: starts the viewer SPA, runs an initial scan, then re-scans on file changes (debounced) and **pushes** the updated graph to the browser via Server-Sent Events. Binds **127.0.0.1** only. Uses incremental scan cache when available.
@@ -326,6 +328,15 @@ npm run build -- --watch
 ```
 
 Type-check only (no emit): `npx tsc --noEmit`.
+
+**Optional integration test against a real bench checkout (Story 8.7):**
+Set `SUTRA_WITHRUN_SLICE` to the path of an `apps/<appname>` directory from a local Frappe bench
+checkout. The test in `tests/frappe-withrun-slice.test.ts` is skipped in CI when the env var is
+unset, and runs locally when set:
+
+```bash
+SUTRA_WITHRUN_SLICE=/path/to/frappe-bench/apps/wr npm test
+```
 
 The main CLI entry point is `src/index.ts`; scanner logic lives under `src/scanners/`.
 Graph schema and migration code are in `src/graph/`.

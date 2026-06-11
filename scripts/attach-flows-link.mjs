@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 /**
  * Post-merge helper: attach flows[] and write link.json for a graph.json path.
+ * Story 8.5: delegates entirely to attachFlowsAndLink() in src/link.ts (no duplicated logic).
  * Usage: node attach-flows-link.mjs GRAPH_PATH [artifactDir]
  */
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { buildFlows } from "../dist/flows.js";
-import { emptyLinkResult, writeLinkFile } from "../dist/link.js";
+import { attachFlowsAndLink } from "../dist/link.js";
 
 const graphPath = path.resolve(process.argv[2] ?? "");
 const artifactDir = path.resolve(process.argv[3] ?? path.dirname(path.dirname(graphPath)));
@@ -17,19 +16,14 @@ if (!graphPath || !fs.existsSync(graphPath)) {
   process.exit(2);
 }
 
-const graph = JSON.parse(fs.readFileSync(graphPath, "utf8"));
-const { flows, confirmed, candidate } = buildFlows(graph.nodes, graph.edges);
-graph.flows = flows;
-fs.writeFileSync(graphPath, JSON.stringify(graph, null, 2), "utf8");
-
-writeLinkFile(
+const { flowsCount, confirmed, candidate, linkPath, multiApp } = attachFlowsAndLink(
+  graphPath,
   artifactDir,
-  emptyLinkResult(graph.repo ?? "merged", artifactDir, graph.commit),
   { onlyIfAbsent: true },
 );
 
 console.log(
-  `  flows: ${flows.length} traced (${confirmed} confirmed, ${candidate} candidate)`,
+  `  flows: ${flowsCount} traced (${confirmed} confirmed, ${candidate} candidate)`,
 );
 console.log(`  wrote flows → ${graphPath}`);
-console.log(`  link.json → ${path.join(artifactDir, ".sutra", "link.json")}`);
+console.log(`  link.json [${multiApp ? "multi-app" : "single-app"}] → ${linkPath}`);

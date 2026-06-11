@@ -39,6 +39,29 @@
 | [8.6](stories/story-8.6-viewer-empty-flows-ecosystem.md) | Viewer — empty flows and ecosystem absent-state |
 | [8.7](stories/story-8.7-regression-frappe-clean-withrun-slice.md) | Regression — frappe-clean + withrun bench slice |
 
+## Story 8.7 — Edge-kind evidence table
+
+Scan counts derived from committed fixtures (Story 8.7 regression gate):
+
+| Fixture | Layout | Nodes | `calls` edges | `http` edges | Flows |
+|---|---|---|---|---|---|
+| `frappe-clean` (baseline Story 4.2) | flat `myapp/` | 17 | 3 | 1 | 1 |
+| `frappe-withrun-slice` (Story 8.7) | bench depth `apps/wr/wr/...` | 21 | 6 | 1 | 1 |
+
+**`frappe-withrun-slice` calls edges (cross-file pairs):**
+- `api/delivery.py#create_delivery → utils/sync.py#validate_delivery`
+- `api/delivery.py#create_delivery → order/handler.py#process_delivery`
+- `order/handler.py#process_delivery → order/helpers.py#log_delivery_event`
+- `order/handler.py#on_delivery_submit → order/handler.py#process_delivery`
+- `hooks.py#doc_events → order/handler.py#on_delivery_submit`
+- `hooks.py#scheduler → utils/sync.py#run_delivery_sync`
+
+**`frappe-withrun-slice` http edges:**
+- `utils/sync.py#run_delivery_sync → http:GET /sync/deliveries|api.logistics-hub.com`
+
+All calls-edge `to` ids exist in `nodes` — no invented targets. Optional env-gated test
+(`SUTRA_WITHRUN_SLICE=/path`) skipped in CI when unset.
+
 ## Principles
 
 Candidate-not-confirmed; deterministic `makeNodeId(rel, symbol)` for node ids; normalize only

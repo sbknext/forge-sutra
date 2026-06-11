@@ -121,3 +121,47 @@ describe("viewer — Section 10 app shell (Story 3.1)", () => {
     expect(html).toContain(graph.repo);
   });
 });
+
+describe("viewer — Story 8.6 empty-state routes", () => {
+  it("GET /favicon.ico returns 204 (AC5 — no browser console error)", async () => {
+    server = await startViewerServer(FIXTURE_DIR, { port: 0 });
+    const res = await fetch(`${server.url}favicon.ico`);
+    expect(res.status).toBe(204);
+  });
+
+  it("GET /events without SSE enabled returns 204 (AC4 — no red console error)", async () => {
+    // viewer mode (no sse option) must not 404 /events
+    server = await startViewerServer(FIXTURE_DIR, { port: 0 });
+    const res = await fetch(`${server.url}events`);
+    expect(res.status).toBe(204);
+  });
+
+  it("GET /events with SSE enabled returns 200 text/event-stream", async () => {
+    server = await startViewerServer(FIXTURE_DIR, { port: 0, sse: true });
+    const ctrl = new AbortController();
+    const res = await fetch(`${server.url}events`, { signal: ctrl.signal }).catch(() => null);
+    if (res) {
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("text/event-stream");
+    }
+    ctrl.abort();
+  });
+
+  it("GET /link.json absent on disk returns 200 with empty stub (AC1)", async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sutra-viewer-nolink-"));
+    fs.mkdirSync(path.join(tmp, ".sutra"), { recursive: true });
+    // write graph.json but no link.json
+    const baseGraph = JSON.parse(
+      fs.readFileSync(path.join(FIXTURE_DIR, ".sutra", "graph.json"), "utf8"),
+    ) as SutraGraph;
+    fs.writeFileSync(path.join(tmp, ".sutra", "graph.json"), JSON.stringify(baseGraph));
+    server = await startViewerServer(tmp, { port: 0 });
+    const res = await fetch(`${server.url}link.json`);
+    expect(res.status).toBe(200);
+    const link = await res.json() as { repos: unknown[]; edges: unknown[] };
+    expect(Array.isArray(link.repos)).toBe(true);
+    expect(Array.isArray(link.edges)).toBe(true);
+    expect(link.edges).toHaveLength(0);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+});

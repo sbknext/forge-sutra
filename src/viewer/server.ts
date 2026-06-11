@@ -228,16 +228,30 @@ export function startViewerServer(
         return;
       }
 
-      if (opts?.sse && req.method === "GET" && url.pathname === "/events") {
-        res.writeHead(200, {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-store",
-          Connection: "keep-alive",
-        });
-        // SSE preamble: retry interval so browsers know reconnect cadence
-        res.write(": connected\nretry: 3000\n\n");
-        sseClients.add(res);
-        req.on("close", () => sseClients.delete(res));
+      if (req.method === "GET" && url.pathname === "/favicon.ico") {
+        // AC5 (Story 8.6): serve favicon silently with 204 to prevent browser console errors.
+        res.writeHead(204, { "Cache-Control": "max-age=86400" });
+        res.end();
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/events") {
+        if (opts?.sse) {
+          res.writeHead(200, {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-store",
+            Connection: "keep-alive",
+          });
+          // SSE preamble: retry interval so browsers know reconnect cadence
+          res.write(": connected\nretry: 3000\n\n");
+          sseClients.add(res);
+          req.on("close", () => sseClients.delete(res));
+        } else {
+          // AC4 (Story 8.6): watch mode inactive — return 204 instead of 404 to prevent
+          // browser console errors when viewer is opened without `forge-sutra watch`.
+          res.writeHead(204, { "Cache-Control": "no-store" });
+          res.end();
+        }
         return;
       }
 

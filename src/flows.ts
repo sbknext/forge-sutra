@@ -88,6 +88,15 @@ function buildAdjacency(edges: SutraEdge[]): Map<string, SutraEdge[]> {
   return adj;
 }
 
+/**
+ * Frappe whitelist endpoints are declared API surfaces — they are entries
+ * unconditionally (even when edge resolution produced no outgoing flow edges).
+ * This prevents empty flows when upstream resolution is partial or missing.
+ */
+function isFrappeEndpointEntry(node: SutraNode): boolean {
+  return node.type === "endpoint" && node.language === "python-frappe";
+}
+
 function findEntryPoints(
   nodes: SutraNode[],
   edges: SutraEdge[],
@@ -110,7 +119,9 @@ function findEntryPoints(
   for (const n of nodes) {
     if (n.type !== "endpoint" || seen.has(n.id)) continue;
     const out = (adj.get(n.id) ?? []).filter((e) => FLOW_KINDS.has(e.kind));
-    if (out.length > 0) {
+    // Frappe whitelisted endpoints are always entries (declared API surface).
+    // Non-Frappe endpoints are entries only when they have outgoing flow edges.
+    if (isFrappeEndpointEntry(n) || out.length > 0) {
       entries.push(n);
       seen.add(n.id);
     }

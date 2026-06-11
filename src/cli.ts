@@ -36,7 +36,7 @@ import {
 import { formatPrComment } from "./pr-comment.js";
 import { writeScaffolds, SCAFFOLD_KINDS } from "./scaffold.js";
 import { runScanPipeline, startWatch, type ScanTimings } from "./watch.js";
-import { runWatch } from "./watch-viewer.js";
+import { runWatch, WATCH_DEBOUNCE_MS } from "./watch-viewer.js";
 import { reconcileGraphs, buildReconcileOutput, type ReconcileOutput, type ReconcileSummary } from "./reconcile.js";
 import { loadExternalHosts } from "./external-hosts.js";
 import { linkGraphs, writeLinkFile } from "./link.js";
@@ -393,8 +393,7 @@ async function cmdWatch(
   const cwd = resolveArtifactRoot(opts.outputDir);
   const repoRoot = path.resolve(repoPath ?? process.cwd());
 
-  const { WATCH_DEBOUNCE_MS: defaultDebounce } = await import("./watch-viewer.js");
-  const debounceMs = opts.debounce ?? defaultDebounce;
+  const debounceMs = opts.debounce ?? WATCH_DEBOUNCE_MS;
 
   const handle = await runWatch(repoRoot, cwd, { port: opts.port, debounceMs });
 

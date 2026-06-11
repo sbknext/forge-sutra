@@ -241,6 +241,23 @@ function emitCallSiteEdges(
   }
 
   if (site.requestsHttpMethod && site.requestsUrl) {
+    // AC2: relative /api/method/<dotted> paths may resolve to an in-repo endpoint node.
+    // Strip the prefix and look up the dotted method string in fnByDotted.
+    // Only relative paths (no host) qualify — external hosts keep their httpTargetId.
+    const API_METHOD_PREFIX = "/api/method/";
+    if (!site.requestsHost && site.requestsUrl.startsWith(API_METHOD_PREFIX)) {
+      const dotted = site.requestsUrl.slice(API_METHOD_PREFIX.length);
+      const targetId = dotted ? fnByDotted.get(dotted) : undefined;
+      if (targetId) {
+        edges.push({
+          from: fromId,
+          to: targetId,
+          kind: "http",
+          provenance: "ast-exact",
+        });
+        return;
+      }
+    }
     edges.push({
       from: fromId,
       to: httpTargetId(site.requestsHttpMethod, site.requestsUrl, site.requestsHost),

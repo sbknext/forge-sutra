@@ -155,7 +155,7 @@ export function parsePythonModule(source: string): PyModuleAst {
  * Python calls it for you — and must not be missed.
  */
 export function hasWhitelistDecorator(decorators: string[]): boolean {
-  return decorators.some((d) => /frappe\.whitelist(\s*\(|$|\s*$)/.test(d));
+  return decorators.some((d) => /frappe\.whitelist(\s*\(|\s*$)/.test(d));
 }
 
 /** True when class extends Document (Frappe controller). */

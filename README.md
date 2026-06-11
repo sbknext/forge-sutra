@@ -480,3 +480,15 @@ Known limitations:
 - **CSS/asset imports:** Non-JS/TS import targets are ignored in `missing_handler` checks.
 - **Express variable mounts:** Routers mounted via variable (e.g., `app.use(prefix, router)`) may not resolve the full path correctly.
 - **Frappe / Python (Epic 4.2):** `@frappe.whitelist()` → endpoints, DocType controllers → handlers, `hooks.py` `doc_events` / `scheduler_events` → edges. Same candidate/heuristic standard as TS. Dynamically-built dotted paths, `frappe.get_attr()` / `frappe.call()`, and runtime-overridden hooks are not confirmed.
+
+## The Forge suite
+
+Sutra is one of three Forge tools — same philosophy: honest, candidate-labelled, local-first.
+
+| Tool | What it shows | Repo |
+|---|---|---|
+| **Sutra** (this) | your product as features, derived from code | [forge-sutra](https://github.com/sbknext/forge-sutra) |
+| **Forge Secure** | security posture — secrets, vulns, SAST — masked by default | [forge-secure](https://github.com/sbknext/forge-secure) |
+| **Forge Harness** | mechanical guards that make any LLM reliable, free or paid | [forge-harness](https://github.com/sbknext/forge-harness) |
+
+Suite overview: [forge.sbknext.com](https://forge.sbknext.com) · MCP surface: [mcp.sbknext.com](https://mcp.sbknext.com)

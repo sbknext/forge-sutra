@@ -5,6 +5,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import path from "node:path";
 import fs from "node:fs";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { startViewerServer } from "../src/viewer/server.js";
 import {
@@ -98,6 +99,44 @@ describe("ecosystem — server routes (Story 3.4)", () => {
       `${server.url}repo-graph?path=${encodeURIComponent("/etc/passwd")}`,
     );
     expect(bad.status).toBe(404);
+  });
+});
+
+describe("ecosystem — Story 8.6 empty / single-repo states", () => {
+  it("linkViewModel returns empty array for empty link", () => {
+    const emptyLink: LinkResult = {
+      version: LINK_VERSION,
+      linked_at: new Date().toISOString(),
+      repos: [{ name: "my-app", path: ECO_DIR }],
+      edges: [],
+    };
+    expect(linkViewModel(emptyLink, new Map(), false)).toHaveLength(0);
+    expect(linkViewModel(emptyLink, new Map(), true)).toHaveLength(0);
+  });
+
+  it("buildClusters returns one entry for single-repo empty link", () => {
+    const emptyLink: LinkResult = {
+      version: LINK_VERSION,
+      linked_at: new Date().toISOString(),
+      repos: [{ name: "my-app", path: ECO_DIR }],
+      edges: [],
+    };
+    const clusters = buildClusters(emptyLink, new Map());
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0]!.endpointIds).toHaveLength(0);
+  });
+
+  it("GET /link.json absent returns 200 with valid stub (AC1)", async () => {
+    // ECO_DIR has link.json written by writeLink(); test without it
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sutra-eco-nolink-"));
+    fs.mkdirSync(path.join(tmp, SUTRA_DIR), { recursive: true });
+    server = await startViewerServer(tmp, { port: 0 });
+    const res = await fetch(`${server.url}link.json`);
+    expect(res.status).toBe(200);
+    const link = await res.json() as LinkResult;
+    expect(link.version).toBe(LINK_VERSION);
+    expect(link.edges).toHaveLength(0);
+    fs.rmSync(tmp, { recursive: true, force: true });
   });
 });
 

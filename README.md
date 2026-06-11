@@ -114,6 +114,8 @@ forge-sutra viewer --port 4600
 
 The static `forge-sutra view` command remains the offline/no-server fallback.
 
+**Absent vs empty `link.json` (Story 8.6):** The viewer server always returns HTTP 200 for `GET /link.json`. When no `.sutra/link.json` exists on disk, the server synthesises a stub `{ repos: [<current>], edges: [] }` rather than returning 404. The Ecosystem tab therefore stays enabled and clickable in all cases — it shows a "single-repo scan" message when `repos.length < 2` or `edges.length === 0`, and the full cross-repo map only when a real `sutra link` run has produced multi-repo data. The `/events` endpoint returns 204 (no content) when `forge-sutra viewer` is used without watch mode, and `/favicon.ico` is silently acknowledged with 204 — neither generates a browser console error.
+
 ### `forge-sutra watch [repoPath]`
 
 Live mode: starts the viewer SPA, runs an initial scan, then re-scans on file changes (debounced) and **pushes** the updated graph to the browser via Server-Sent Events. Binds **127.0.0.1** only. Uses incremental scan cache when available.

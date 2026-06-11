@@ -40,7 +40,12 @@
           }
           tab._sutraLink = link;
           tab.classList.remove("disabled");
-          tab.title = "Cross-repo ecosystem map";
+          // AC2 (Story 8.6): reflect whether real cross-repo data is present.
+          var hasEdges = link.edges && link.edges.length > 0;
+          var hasMultiRepo = link.repos && link.repos.length >= 2;
+          tab.title = (hasEdges && hasMultiRepo)
+            ? "Cross-repo ecosystem map"
+            : "Single-repo scan — run sutra link for cross-app map";
           tab.onclick = function () {
             window.SutraEcosystem.show(link);
           };
@@ -69,8 +74,13 @@
           "<h2>Ecosystem map</h2>";
 
         if (edges.length === 0 || repos.length < 2) {
-          html +=
-            '<p class="meta eco-empty">link.json is present but has no cross-repo edges yet. Run <code>sutra link &lt;client-repo&gt; &lt;server-repo&gt;</code> after scanning both repos.</p>';
+          // AC2 (Story 8.6): empty / single-repo link — honest neutral copy, no error badge.
+          var singleRepo = repos.length < 2;
+          html += '<p class="meta eco-empty">' +
+            (singleRepo
+              ? 'Single-repo scan &mdash; run <code>sutra link &lt;client-repo&gt; &lt;server-repo&gt;</code> after scanning both repos to build the cross-app map.'
+              : 'No cross-repo edges found yet &mdash; run <code>sutra link &lt;client-repo&gt; &lt;server-repo&gt;</code> after scanning both repos to build the cross-app map.') +
+            '</p>';
         } else {
           html +=
             '<label><input type="checkbox" id="eco-unresolved"> Show unresolved links</label>';

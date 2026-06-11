@@ -153,9 +153,10 @@ export function computeChangedFeatureIds(
       changed.push(feat.id);
       continue;
     }
+    const prevNodeSet = new Set(p.node_ids);
     const nodeSetChanged =
       feat.node_ids.length !== p.node_ids.length ||
-      feat.node_ids.some((id) => !p.node_ids.includes(id));
+      feat.node_ids.some((id) => !prevNodeSet.has(id));
     const issueCountChanged = feat.issue_count !== p.issue_count;
     const healthChanged =
       (feat.health?.score ?? null) !== (p.health?.score ?? null);

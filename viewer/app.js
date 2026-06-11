@@ -736,7 +736,7 @@
         if (!grid) return;
         for (var i = 0; i < changedIds.length; i++) {
           var id = changedIds[i];
-          var cards = grid.querySelectorAll('[data-feature="' + id + '"]');
+          var cards = grid.querySelectorAll('[data-feature="' + (typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id) + '"]');
           for (var j = 0; j < cards.length; j++) {
             cards[j].classList.add("card-changed");
             var existing = cards[j].querySelector(".card-changed-badge");

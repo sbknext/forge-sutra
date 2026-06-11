@@ -1,7 +1,7 @@
 # Story 6.4: Flow tracing verified on Python (directed start->end)
 
 - Epic: Epic 6 — Hardening
-- Status: Draft
+- Status: Superseded by epic-8 (audit 2026-06-11)
 - Priority: P0
 - Depends on: 6.1, 6.2, 6.3
 - Estimate: M

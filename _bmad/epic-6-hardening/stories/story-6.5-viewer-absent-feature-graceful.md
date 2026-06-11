@@ -1,7 +1,7 @@
 # Story 6.5: Viewer — absent link.json / events is not a console error
 
 - Epic: Epic 6 — Hardening
-- Status: Draft
+- Status: Superseded by epic-8 (audit 2026-06-11)
 - Priority: P1
 - Depends on: none
 - Estimate: S

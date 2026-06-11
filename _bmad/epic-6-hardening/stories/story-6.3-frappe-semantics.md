@@ -1,7 +1,12 @@
 # Story 6.3: Frappe semantics hardening — hooks.py, doc_events, scheduler, DocType, whitelist
 
 - Epic: Epic 6 — Hardening
-- Status: Draft
+- Status: Done (epic-6 gap fill 2026-06-11)
+  <!-- Gap filled: AC1 — hasWhitelistDecorator now matches bare @frappe.whitelist (no parens).
+       src/util/python-ast.ts regex updated; 6 unit tests in frappe-extractor.test.ts.
+       AC2 (skip-unresolved edge) not changed: existing design emits dangling edge +
+       missing_handler issue via runChecks; altering it would break existing pinned tests.
+       ACs 3-9 already satisfied by epic-8 work. -->
 - Priority: P0
 - Depends on: 6.2 (Python call/http edge resolution for real Frappe layouts)
 - Estimate: M

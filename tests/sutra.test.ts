@@ -54,6 +54,7 @@ const FLOW_LOCAL = path.resolve(__dirname, "fixtures/flow-local");
 const FLOW_DYNAMIC = path.resolve(__dirname, "fixtures/flow-dynamic");
 const FLOW_UNRESOLVED = path.resolve(__dirname, "fixtures/flow-unresolved");
 const FLOW_CYCLE = path.resolve(__dirname, "fixtures/flow-cycle");
+const PROXY_LOCAL_OVERRIDE = path.resolve(__dirname, "fixtures/proxy-local-override");
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 function sortedIds(nodes: SutraNode[]): string[] {
@@ -994,5 +995,69 @@ describe("incremental cache (Story 1.5)", () => {
     expect(runChecks(warm.nodes, warm.edges)).toEqual(
       runChecks(cold.nodes, cold.edges),
     );
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// PROXY-LOCAL-OVERRIDE — wildcard proxy + local App Router handler
+// Next.js: local route handlers ALWAYS take precedence over rewrites.
+// Bug: flows.ts treated isCoveredByProxy() as terminal "unresolved" without
+// first checking whether a local handler exists for the same path.
+// Fix: check findEndpointHandler() before falling through to "unresolved".
+// ═════════════════════════════════════════════════════════════════════════════
+describe("flow tracing — proxy-local-override (wildcard proxy + local handler)", () => {
+  it("emits exactly one http edge from SearchWidget to POST /api/data/search", () => {
+    const { edges } = scan(PROXY_LOCAL_OVERRIDE);
+    const httpEdges = edges.filter((e: SutraEdge) => e.kind === "http");
+    expect(httpEdges.length, "expected exactly one http edge").toBe(1);
+    expect(httpEdges[0]!.to).toBe("http:POST /api/data/search");
+  });
+
+  it("emits a PROXY /api node from next.config.js wildcard rewrite", () => {
+    const { nodes } = scan(PROXY_LOCAL_OVERRIDE);
+    const proxyNode = nodes.find(
+      (n: SutraNode) => n.type === "route" && n.name === "PROXY /api",
+    );
+    expect(proxyNode, "PROXY /api node not found").toBeDefined();
+  });
+
+  it("emits a local POST /api/data/search endpoint node from app/api/data/search/route.ts", () => {
+    const { nodes } = scan(PROXY_LOCAL_OVERRIDE);
+    const ep = nodes.find(
+      (n: SutraNode) => n.type === "endpoint" && n.name === "POST /api/data/search",
+    );
+    expect(ep, "local endpoint node for POST /api/data/search not found").toBeDefined();
+  });
+
+  it("flow from SearchWidget resolves to the local handler (terminal=handler, NOT unresolved)", () => {
+    const { nodes, edges } = scan(PROXY_LOCAL_OVERRIDE);
+    const { flows } = buildFlows(nodes, edges);
+    const flow = flows.find((f) => f.entry.includes("SearchWidget"));
+    expect(flow, "no flow from SearchWidget found").toBeDefined();
+    expect(
+      flow!.terminal,
+      `expected terminal=handler but got ${flow!.terminal} — proxy wrongly overrides local handler`,
+    ).toBe("handler");
+  });
+
+  it("flow from SearchWidget is confirmed (not candidate) — local resolution is exact", () => {
+    const { nodes, edges } = scan(PROXY_LOCAL_OVERRIDE);
+    const { flows } = buildFlows(nodes, edges);
+    const flow = flows.find((f) => f.entry.includes("SearchWidget"));
+    expect(flow, "no flow from SearchWidget found").toBeDefined();
+    expect(
+      flow!.confidence,
+      `expected confidence=confirmed but got ${flow!.confidence}`,
+    ).toBe("confirmed");
+  });
+
+  it("zero orphaned_endpoint issues — local handler satisfies the call", () => {
+    const { nodes, edges } = scan(PROXY_LOCAL_OVERRIDE);
+    const issues = runChecks(nodes, edges);
+    const orphans = issues.filter((i: SutraIssue) => i.kind === "orphaned_endpoint");
+    expect(
+      orphans,
+      `Expected 0 orphaned_endpoint but got ${orphans.length}: ${orphans.map((o: SutraIssue) => o.node).join(", ")}`,
+    ).toHaveLength(0);
   });
 });

@@ -9,6 +9,7 @@ import { scan } from "../src/scanner.js";
 import { runChecks } from "../src/checks.js";
 import { buildFlows } from "../src/flows.js";
 import { isFrappeRepo } from "../src/extractors/python-frappe.js";
+import { hasWhitelistDecorator } from "../src/util/python-ast.js";
 import type { SutraNode } from "../src/types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -127,6 +128,41 @@ describe("python/frappe extractor — broken (Story 4.2 §11)", () => {
         (i.node.includes("removed_job") || i.message.includes("removed_job")),
     );
     expect(missing).toBeDefined();
+  });
+});
+
+describe("python/frappe extractor — whitelist forms (Story 6.3 AC1)", () => {
+  // Unit-test hasWhitelistDecorator directly to avoid adding fixture files that
+  // would shift the regression-pinned node/edge/flow counts in frappe-clean.
+  // The decorator text passed here matches what decoratorText() extracts from the
+  // tree-sitter AST for each real Python form (stripping surrounding whitespace).
+
+  it("bare @frappe.whitelist (no call parens) returns true", () => {
+    // Python: @frappe.whitelist  — no parens; Python calls it automatically
+    expect(hasWhitelistDecorator(["@frappe.whitelist"])).toBe(true);
+  });
+
+  it("@frappe.whitelist() (empty call) returns true", () => {
+    expect(hasWhitelistDecorator(["@frappe.whitelist()"])).toBe(true);
+  });
+
+  it("@frappe.whitelist(allow_guest=True) returns true", () => {
+    expect(hasWhitelistDecorator(["@frappe.whitelist(allow_guest=True)"])).toBe(true);
+  });
+
+  it("@frappe.whitelist(methods=['POST']) returns true", () => {
+    expect(hasWhitelistDecorator(['@frappe.whitelist(methods=["POST"])'])).toBe(true);
+  });
+
+  it("unrelated decorator returns false", () => {
+    expect(hasWhitelistDecorator(["@staticmethod"])).toBe(false);
+    expect(hasWhitelistDecorator(["@login_required"])).toBe(false);
+    expect(hasWhitelistDecorator([])).toBe(false);
+  });
+
+  it("mixed decorators: true when at least one is whitelist", () => {
+    expect(hasWhitelistDecorator(["@staticmethod", "@frappe.whitelist"])).toBe(true);
+    expect(hasWhitelistDecorator(["@frappe.whitelist()", "@login_required"])).toBe(true);
   });
 });
 

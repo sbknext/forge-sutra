@@ -1,7 +1,7 @@
 # Story 6.2: Resolve local imports to module/function nodes + http endpoint edges
 
 - Epic: Epic 6 — Hardening
-- Status: Draft
+- Status: Superseded by epic-8 (audit 2026-06-11)
 - Priority: P0
 - Depends on: 6.1 (Python `calls` edges — intra-repo call resolution)
 - Estimate: M

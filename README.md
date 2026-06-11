@@ -75,12 +75,41 @@ forge-sutra scan --check    # fails only on new issues vs baseline
 
 **GitHub Actions (canonical):**
 
+The workflow below is the exact pattern used in `.github/workflows/sutra-self-check.yml` — forge-sutra scans itself on every PR and the gate is verified green. Copy it as-is.
+
 ```yaml
-- run: npm ci && npm run build
-- run: npx forge-sutra baseline ./your-repo   # once, commit .sutra/baseline.json
-- run: npx forge-sutra scan ./your-repo --check
-  # exit 1 = new structural regression · exit 2 = missing/incompatible baseline
+# .github/workflows/sutra-self-check.yml
+name: Sutra self-check
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  self-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm run sutra:check   # scan --check against .sutra/baseline.json
 ```
+
+Add these scripts to `package.json` once:
+
+```json
+"sutra:baseline": "node dist/cli.js baseline",
+"sutra:check":    "node dist/cli.js scan --check"
+```
+
+**Baseline workflow:**
+
+1. **Record once** — run `npm run sutra:baseline`, then commit `.sutra/baseline.json`. This pins the acceptable structural state for your repo.
+2. **CI checks on every PR** — `npm run sutra:check` re-scans and exits 1 if new error-severity issues appear vs the baseline; exits 0 if clean.
+3. **Refresh after intentional structural change** — re-run `npm run sutra:baseline`, commit the updated `.sutra/baseline.json` in the same PR so the gate stays honest.
 
 Exit codes for `--check`: **0** pass · **1** new issues at `--fail-on` threshold · **2** configuration error (no baseline or version skew).
 

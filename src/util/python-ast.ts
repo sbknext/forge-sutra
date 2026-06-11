@@ -144,9 +144,18 @@ export function parsePythonModule(source: string): PyModuleAst {
   return { functions, classes };
 }
 
-/** True when any decorator mentions frappe.whitelist. */
+/**
+ * True when any decorator mentions frappe.whitelist in any of its real forms:
+ *   @frappe.whitelist              (bare — no call parens)
+ *   @frappe.whitelist()            (called, empty args)
+ *   @frappe.whitelist(allow_guest=True)
+ *   @frappe.whitelist(methods=["POST"])
+ *
+ * The bare form `@frappe.whitelist` (no parens) is a valid Python decorator —
+ * Python calls it for you — and must not be missed.
+ */
 export function hasWhitelistDecorator(decorators: string[]): boolean {
-  return decorators.some((d) => /frappe\.whitelist\s*\(/.test(d));
+  return decorators.some((d) => /frappe\.whitelist(\s*\(|$|\s*$)/.test(d));
 }
 
 /** True when class extends Document (Frappe controller). */

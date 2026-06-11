@@ -1,0 +1,337 @@
+{
+  "version": 6,
+  "repo": "self-check-gate",
+  "scanned_at": "2026-06-11T08:02:56.645Z",
+  "commit": "01b25a5",
+  "nodes": [
+    {
+      "id": "app/api/orders/route.ts",
+      "type": "module",
+      "name": "app/api/orders/route.ts",
+      "file": "app/api/orders/route.ts",
+      "line": 1,
+      "data_shape": null,
+      "feature": "orders",
+      "language": "ts",
+      "provenance": "ast-exact"
+    },
+    {
+      "id": "app/api/orders/route.ts#GET",
+      "type": "handler",
+      "name": "GET",
+      "file": "app/api/orders/route.ts",
+      "line": 6,
+      "data_shape": null,
+      "feature": "orders",
+      "language": "ts",
+      "provenance": "ast-exact"
+    },
+    {
+      "id": "app/api/orders/route.ts#GET /api/orders",
+      "type": "endpoint",
+      "name": "GET /api/orders",
+      "file": "app/api/orders/route.ts",
+      "line": 1,
+      "data_shape": "GET /api/orders",
+      "feature": "orders",
+      "language": "ts",
+      "provenance": "ast-exact"
+    },
+    {
+      "id": "external-hosts#EXTERNAL api.telegram.org",
+      "type": "route",
+      "name": "EXTERNAL api.telegram.org",
+      "file": "external-hosts",
+      "line": 1,
+      "data_shape": "EXTERNAL api.telegram.org",
+      "feature": "external",
+      "language": "ts",
+      "provenance": "heuristic"
+    },
+    {
+      "id": "external-hosts#EXTERNAL hooks.stripe.com",
+      "type": "route",
+      "name": "EXTERNAL hooks.stripe.com",
+      "file": "external-hosts",
+      "line": 1,
+      "data_shape": "EXTERNAL hooks.stripe.com",
+      "feature": "external",
+      "language": "ts",
+      "provenance": "heuristic"
+    },
+    {
+      "id": "lib/client.ts",
+      "type": "module",
+      "name": "lib/client.ts",
+      "file": "lib/client.ts",
+      "line": 1,
+      "data_shape": null,
+      "feature": "lib",
+      "language": "ts",
+      "provenance": "ast-exact"
+    },
+    {
+      "id": "lib/client.ts#getOrders",
+      "type": "function",
+      "name": "getOrders",
+      "file": "lib/client.ts",
+      "line": 2,
+      "data_shape": null,
+      "feature": "lib",
+      "language": "ts",
+      "provenance": "ast-exact"
+    },
+    {
+      "id": "lib/orders.ts",
+      "type": "module",
+      "name": "lib/orders.ts",
+      "file": "lib/orders.ts",
+      "line": 1,
+      "data_shape": null,
+      "feature": "lib",
+      "language": "ts",
+      "provenance": "ast-exact"
+    },
+    {
+      "id": "lib/orders.ts#fetchOrders",
+      "type": "function",
+      "name": "fetchOrders",
+      "file": "lib/orders.ts",
+      "line": 2,
+      "data_shape": null,
+      "feature": "lib",
+      "language": "ts",
+      "provenance": "ast-exact"
+    }
+  ],
+  "edges": [
+    {
+      "from": "app/api/orders/route.ts",
+      "to": "ext:next/server",
+      "kind": "imports"
+    },
+    {
+      "from": "app/api/orders/route.ts",
+      "to": "lib/orders.ts#fetchOrders",
+      "kind": "calls"
+    },
+    {
+      "from": "app/api/orders/route.ts",
+      "to": "lib/orders.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "lib/client.ts#getOrders",
+      "to": "http:GET /api/orders",
+      "kind": "http",
+      "provenance": "ast-exact"
+    }
+  ],
+  "issues": [
+    {
+      "severity": "info",
+      "kind": "untested_feature",
+      "node": "external",
+      "feature": "external",
+      "message": "Static test linkage: no test references resolve into feature 'external' (not runtime coverage)."
+    },
+    {
+      "severity": "info",
+      "kind": "untested_feature",
+      "node": "lib",
+      "feature": "lib",
+      "message": "Static test linkage: no test references resolve into feature 'lib' (not runtime coverage)."
+    },
+    {
+      "severity": "info",
+      "kind": "untested_feature",
+      "node": "orders",
+      "feature": "orders",
+      "message": "Static test linkage: no test references resolve into feature 'orders' (not runtime coverage)."
+    }
+  ],
+  "features": [
+    {
+      "id": "external",
+      "label": "External",
+      "label_source": "heuristic",
+      "node_ids": [
+        "external-hosts#EXTERNAL api.telegram.org",
+        "external-hosts#EXTERNAL hooks.stripe.com"
+      ],
+      "issue_count": 1,
+      "health": {
+        "score": 86,
+        "band": "green",
+        "inputs": [
+          {
+            "signal": "issue_load",
+            "available": true,
+            "weight": 0.35,
+            "penalty": 15,
+            "detail": "1 issue(s) weighted by severity, normalized by 2 node(s)"
+          },
+          {
+            "signal": "orphan_ratio",
+            "available": true,
+            "weight": 0.35,
+            "penalty": 0,
+            "detail": "Structural issues (orphan/missing/dangling) vs feature size"
+          },
+          {
+            "signal": "confidence",
+            "available": false,
+            "weight": 0.1,
+            "penalty": 0,
+            "detail": "No confidence data on issues"
+          },
+          {
+            "signal": "contract_drift",
+            "available": false,
+            "weight": 0.1,
+            "penalty": 0,
+            "detail": "No contract drift data"
+          },
+          {
+            "signal": "test_coverage",
+            "available": true,
+            "weight": 0.1,
+            "penalty": 60,
+            "detail": "No test references resolve into this feature (static)"
+          }
+        ],
+        "available_signals": [
+          "issue_load",
+          "orphan_ratio",
+          "test_coverage"
+        ]
+      },
+      "test_edge_count": 0,
+      "test_node_ids": [],
+      "tested": false
+    },
+    {
+      "id": "lib",
+      "label": "Lib",
+      "label_source": "heuristic",
+      "node_ids": [
+        "lib/client.ts",
+        "lib/client.ts#getOrders",
+        "lib/orders.ts",
+        "lib/orders.ts#fetchOrders"
+      ],
+      "issue_count": 1,
+      "health": {
+        "score": 89,
+        "band": "green",
+        "inputs": [
+          {
+            "signal": "issue_load",
+            "available": true,
+            "weight": 0.35,
+            "penalty": 8,
+            "detail": "1 issue(s) weighted by severity, normalized by 4 node(s)"
+          },
+          {
+            "signal": "orphan_ratio",
+            "available": true,
+            "weight": 0.35,
+            "penalty": 0,
+            "detail": "Structural issues (orphan/missing/dangling) vs feature size"
+          },
+          {
+            "signal": "confidence",
+            "available": false,
+            "weight": 0.1,
+            "penalty": 0,
+            "detail": "No confidence data on issues"
+          },
+          {
+            "signal": "contract_drift",
+            "available": false,
+            "weight": 0.1,
+            "penalty": 0,
+            "detail": "No contract drift data"
+          },
+          {
+            "signal": "test_coverage",
+            "available": true,
+            "weight": 0.1,
+            "penalty": 60,
+            "detail": "No test references resolve into this feature (static)"
+          }
+        ],
+        "available_signals": [
+          "issue_load",
+          "orphan_ratio",
+          "test_coverage"
+        ]
+      },
+      "test_edge_count": 0,
+      "test_node_ids": [],
+      "tested": false
+    },
+    {
+      "id": "orders",
+      "label": "Orders",
+      "label_source": "heuristic",
+      "node_ids": [
+        "app/api/orders/route.ts",
+        "app/api/orders/route.ts#GET",
+        "app/api/orders/route.ts#GET /api/orders"
+      ],
+      "issue_count": 1,
+      "health": {
+        "score": 88,
+        "band": "green",
+        "inputs": [
+          {
+            "signal": "issue_load",
+            "available": true,
+            "weight": 0.35,
+            "penalty": 10,
+            "detail": "1 issue(s) weighted by severity, normalized by 3 node(s)"
+          },
+          {
+            "signal": "orphan_ratio",
+            "available": true,
+            "weight": 0.35,
+            "penalty": 0,
+            "detail": "Structural issues (orphan/missing/dangling) vs feature size"
+          },
+          {
+            "signal": "confidence",
+            "available": false,
+            "weight": 0.1,
+            "penalty": 0,
+            "detail": "No confidence data on issues"
+          },
+          {
+            "signal": "contract_drift",
+            "available": false,
+            "weight": 0.1,
+            "penalty": 0,
+            "detail": "No contract drift data"
+          },
+          {
+            "signal": "test_coverage",
+            "available": true,
+            "weight": 0.1,
+            "penalty": 60,
+            "detail": "No test references resolve into this feature (static)"
+          }
+        ],
+        "available_signals": [
+          "issue_load",
+          "orphan_ratio",
+          "test_coverage"
+        ]
+      },
+      "test_edge_count": 0,
+      "test_node_ids": [],
+      "tested": false
+    }
+  ],
+  "contracts": [],
+  "flows": []
+}

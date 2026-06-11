@@ -1,7 +1,7 @@
 # Story 6.7: Self-CI dogfood — forge-sutra runs `scan --check` on its own PRs
 
 - **Epic:** Epic 6 — Hardening
-- **Status:** Draft
+- **Status:** Draft — open (agent deferred per audit 2026-06-11; CI/baseline work, out of scope for gap-fill pass)
 - **Priority:** P1
 - **Depends on:** 6.1, 6.2, 6.4 (Python `calls`/`http` edges + flow parity must land first so the self-scan is meaningful), Story 4.4 (`scan --check` + baseline contract, already shipped)
 - **Estimate:** M

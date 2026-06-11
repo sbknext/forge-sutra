@@ -18,6 +18,8 @@
     "test": "vitest run",
     "lint": "tsc --noEmit",
     "sutra": "node dist/cli.js",
+    "sutra:baseline": "node dist/cli.js baseline",
+    "sutra:check": "node dist/cli.js scan --check",
     "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {

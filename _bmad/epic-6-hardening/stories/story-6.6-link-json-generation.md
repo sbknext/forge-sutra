@@ -1,7 +1,7 @@
 # Story 6.6: link.json generation (cross-repo / bench-merge)
 
 - Epic: Epic 6 — Hardening
-- Status: Draft
+- Status: Superseded by epic-8 (audit 2026-06-11)
 - Priority: P1
 - Depends on: 6.5 (honest empty-state for the viewer Ecosystem tab)
 - Estimate: M

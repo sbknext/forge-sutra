@@ -1,0 +1,40 @@
+name: Sutra self-check
+
+# Story 6.7 — forge-sutra scans itself with scan --check on every PR.
+# Dogfoods the same gate we ask users to add to their CI.
+# Steps mirror the canonical example in the README.
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  self-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      # (a) Install dependencies
+      - name: Install
+        run: npm ci
+
+      # (b) Build
+      - name: Build
+        run: npm run build
+
+      # (c) Run test suite — gate relies on the same quality bar
+      - name: Test
+        run: npm test
+
+      # (d) Dogfood: scan forge-sutra itself against the committed baseline.
+      # Fails this job (via non-zero exit) if new error-severity structural
+      # issues appear relative to .sutra/baseline.json.
+      # To refresh the baseline after an intentional structural change:
+      #   npm run sutra:baseline && git add .sutra/baseline.json && git commit
+      - name: Sutra self-check (scan --check)
+        run: npm run sutra:check

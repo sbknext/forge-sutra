@@ -1,7 +1,7 @@
 # Story 6.1: Python `calls` edges — diagnose + fix intra-repo call resolution
 
 - **Epic:** Epic 6 — Hardening
-- **Status:** Draft
+- **Status:** Superseded by epic-8 (audit 2026-06-11)
 - **Priority:** P0
 - **Depends on:** none
 - **Estimate:** M

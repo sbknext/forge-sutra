@@ -280,6 +280,29 @@ function walkFromEntry(
       }
 
       if (isCoveredByProxy(target.path, proxyPrefixes)) {
+        // Next.js App Router: local route handlers always take precedence over
+        // rewrites.  Check for a local handler FIRST before treating this as a
+        // proxy hop.  Only fall through to cross-repo / unresolved when no
+        // local handler exists for the same method + path.
+        const localFirst = findEndpointHandler(nodes, target.method, target.path);
+        if (localFirst) {
+          if (localFirst.dynamic) candidate = true;
+          if (edge.provenance === "template-prefix") candidate = true;
+          if (visited.has(localFirst.handlerId)) {
+            terminal = "truncated";
+            candidate = true;
+            break;
+          }
+          visited.add(localFirst.handlerId);
+          steps.push({ node: localFirst.handlerId, edge });
+          current = localFirst.handlerId;
+          const det = detectTerminal(localFirst.handlerId, nodeMap, adj, externalHosts);
+          terminal = det.terminal;
+          if (det.candidate) candidate = true;
+          if (det.extraStep) steps.push(det.extraStep);
+          break;
+        }
+
         const cross = resolveCrossRepo(crossRepoIndex, target.method, target.path);
         if (cross) {
           if (cross.dynamic) candidate = true;

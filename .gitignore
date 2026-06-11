@@ -1,8 +1,12 @@
 node_modules/
 dist/
-.sutra/
+.sutra/*
+!.sutra/baseline.json
 !tests/fixtures/**/.sutra/
 !tests/fixtures/**/.sutra/**
+# but never commit machine-specific scan artifacts inside fixtures
+tests/fixtures/**/.sutra/cache/
+tests/fixtures/**/.sutra/link.json
 *.log
 .DS_Store
 

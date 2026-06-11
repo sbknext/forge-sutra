@@ -329,6 +329,15 @@ npm run build -- --watch
 
 Type-check only (no emit): `npx tsc --noEmit`.
 
+**Optional integration test against a real bench checkout (Story 8.7):**
+Set `SUTRA_WITHRUN_SLICE` to the path of an `apps/<appname>` directory from a local Frappe bench
+checkout. The test in `tests/frappe-withrun-slice.test.ts` is skipped in CI when the env var is
+unset, and runs locally when set:
+
+```bash
+SUTRA_WITHRUN_SLICE=/path/to/frappe-bench/apps/wr npm test
+```
+
 The main CLI entry point is `src/index.ts`; scanner logic lives under `src/scanners/`.
 Graph schema and migration code are in `src/graph/`.
 
